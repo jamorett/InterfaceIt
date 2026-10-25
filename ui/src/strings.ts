@@ -263,6 +263,25 @@ export const strings = {
 
   diff: { preview: 'Change preview', full: 'Change', open: 'Open details', added: (n: number) => `+${n}`, removed: (n: number) => `−${n}` },
 
+  palette: {
+    title: 'Command palette',
+    placeholder: 'Type a command…',
+    newSession: 'New session',
+    export: 'Export conversation as Markdown',
+    find: 'Find in conversation',
+    stop: 'Stop Claude',
+    mode: (m: string) => `Permissions: ${m}`,
+    switchTo: (t: string) => `Go to: ${t}`,
+    run: (name: string) => `Run /${name}`,
+  },
+  find: {
+    label: 'Find in conversation',
+    previous: 'Previous match',
+    next: 'Next match',
+    close: 'Close search',
+    none: 'No matches',
+    of: (i: number, n: number) => `${i} of ${n}`,
+  },
   shortcuts: { modeChanged: (mode: string) => `Permissions: ${mode}` },
 
   inspector: { title: 'Details', close: 'Close details', cut: (shown: string, total: string) => `Showing the first ${shown} of ${total} characters.` },

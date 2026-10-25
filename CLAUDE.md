@@ -6,8 +6,8 @@ A local web UI (later Electron) on top of Claude Code, built on the Agent SDK. *
 Updated at the end of every finished step: date, what is done, what is next. History is in `git log`.
 
 - **Works end to end** (2026-10-25): `npm start` opens the app; a prompt streams a formatted answer with tool cards; permissions, questions and plans are answered inline; Stop, queue, reconnect, reload re-attach, take-over from another tab, folder trust, past-session resume, usage/context gauges, subagent lanes. Proved by `npm run check` (typecheck + ~250 unit tests + ~240 e2e tests on recorded real sessions) and by `npm run smoke` (21 checks on the real SDK).
-- **Done milestones:** M0 (design system and states), M1 (talk to it). **Partly done:** M2 (control), M3 (agents and sessions), M4 (markdown only). Exact lists are in PLAN.md §11.
-- **Next, in order** (PLAN.md §14.8 item 5): M2 leftovers (OS notification when unfocused, Esc → Stop, Ctrl+Shift+M, Alt+↑/↓, edit-input-then-allow) → M4 core (diff viewer, Shiki, ANSI, Ctrl+K palette and `/` picker, `@` mentions, image paste) → M3 leftovers (sidebar search/rename/fork, lane animation) → M5.
+- **Done milestones:** M0 (design system and states), M1 (talk to it). **Partly done:** M2 (control), M3 (agents and sessions), M4 (all but memory prefix, MCP/elicitation, rewind). Exact lists are in PLAN.md §11.
+- **Next, in order:** rewind/edit-and-resend → MCP status + elicitation form → `#` memory → M3 leftovers (sidebar search/rename/fork, lane detail, lane animation) → M5 (tabs, settings, Electron).
 - **Facts about this setup that shaped the design** (PLAN.md §13.2): `result` is not the end of a session (use the SDK's `idle`); `session_init` repeats every turn; no todo tool exists in SDK sessions of CLI 2.1.310 (the todo strip stays dormant); Stop gives `error_during_execution` + `aborted_tools` and the session survives; rewind needs a persisted session and a `uuid` on the user message.
 
 ## How to work here

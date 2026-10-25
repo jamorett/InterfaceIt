@@ -109,6 +109,8 @@ type Props = {
   debug?: boolean;
   announce?: string;
   on?: Handlers;
+  /** a card to scroll to and ring (search); `n` changes on every step so the same card can be asked for twice */
+  focusItem?: { index: number; n: number };
   /** false renders every card (the static design previews, so tests can see all of them); the app always virtualizes */
   virtualize?: boolean;
 };
@@ -118,7 +120,7 @@ type Props = {
  * it follows the end while you are at the bottom and, once you scroll up, leaves you alone and offers "jump to latest".
  * Cards are wrapped one by one so a renderer bug stays local.
  */
-export function Transcript({ items, debug = false, announce, on = {}, virtualize = true }: Props) {
+export function Transcript({ items, debug = false, announce, on = {}, focusItem, virtualize = true }: Props) {
   const list = useRef<VirtuosoHandle>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [unseen, setUnseen] = useState(0);
@@ -128,6 +130,10 @@ export function Transcript({ items, debug = false, announce, on = {}, virtualize
     if (!atBottom && items.length > seen.current) setUnseen((n) => n + items.length - seen.current);
     seen.current = items.length;
   }, [items.length, atBottom]);
+
+  useEffect(() => {
+    if (focusItem) list.current?.scrollToIndex({ index: focusItem.index, align: 'center' });
+  }, [focusItem]);
 
   const live = <div className="sr-only" aria-live="polite">{announce}</div>; // once per finished block, never per token (PLAN.md §9.3)
 
@@ -179,7 +185,7 @@ export function Transcript({ items, debug = false, announce, on = {}, virtualize
         atBottomStateChange={(b) => { setAtBottom(b); if (b) setUnseen(0); }}
         increaseViewportBy={300}
         itemContent={(i, item) => (
-          <div data-item-index={i} className="mx-auto w-full max-w-[780px] px-4 py-1.5">
+          <div data-item-index={i} className={`mx-auto w-full max-w-[780px] px-4 py-1.5 ${focusItem?.index === i ? 'outline-2 -outline-offset-2 outline-accent' : ''}`}>
             <Card item={item} debug={debug} on={on} />
           </div>
         )}

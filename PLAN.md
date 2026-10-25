@@ -504,8 +504,8 @@ Done: subagent lanes from `task` events (without layout animation), session side
 
 **Done when:** a task spawning 2 subagents shows 2 live lanes that collapse when done, reopening the app resumes the session with no replay animation, and the context gauge moves every turn.
 
-### M4 — Rich tools — started
-Done: formatted answers (react-markdown + GFM; no raw HTML, links filtered, remote images not loaded, half-written fences closed while streaming, copy button on code). Remaining: Edit/Write/MultiEdit diff (diff2html, CRLF-safe), Shiki highlighting, Bash/PowerShell ANSI output, Read preview + images, Ctrl+K palette and `/` picker from `session_init`, `@` mentions, `!` and `#` prefixes, image paste, MCP status + elicitation, transcript search, export, rewind/edit-and-resend.
+### M4 — Rich tools — mostly done
+Done: formatted answers; Edit/Write diff (own LCS diff, `diff2html` dropped: ~80 lines and no extra package); Shiki; ANSI output; Read as code; images in results; full-output fetch; Ctrl+K palette; `/` picker (commands from `supportedCommands()`); `@` file mentions (`fs_search`); image paste/drop/pick (max 5, shrunk to 2000px, 5 MB); Ctrl+F transcript search; export to Markdown. Decision: the `!` prefix is dropped (it would run commands outside the permission system). Remaining: `#` memory prefix, MCP status + elicitation form, rewind/edit-and-resend. `@` with the real CLI is not yet checked in the smoke test.
 
 **Done when:** every hostile fixture in §10 renders without a crash or horizontal page scroll at 360 px wide (✅ for the fixtures that exist today).
 

@@ -324,3 +324,31 @@ test.describe('what a change looks like in a live session', () => {
     await expect(page.getByLabel('Code').first()).toContainText('hello world');
   });
 });
+
+test.describe('finding and the palette', () => {
+  test('Ctrl+K runs a palette action, and Ctrl+F steps through matches', async ({ page }) => {
+    await start(page);
+    await say(page, '[[basic]] hello');
+    await idle(page);
+    await page.keyboard.press('Control+k');
+    await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
+    await page.keyboard.type('find');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('search')).toBeVisible();
+    await page.getByLabel('Find in conversation').fill('hello');
+    await expect(page.getByRole('search').getByRole('status')).toHaveText('1 of 1');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('search')).toHaveCount(0);
+  });
+
+  test('exporting downloads the conversation as Markdown', async ({ page }) => {
+    await start(page);
+    await say(page, '[[basic]] hello export');
+    await idle(page);
+    await page.keyboard.press('Control+k');
+    await page.keyboard.type('export');
+    const download = page.waitForEvent('download');
+    await page.keyboard.press('Enter');
+    expect((await download).suggestedFilename()).toMatch(/\.md$/);
+  });
+});
