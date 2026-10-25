@@ -279,8 +279,12 @@ Derived colours are added only where the palette has no answer (error, warning, 
 | `--primary-fill` | `#34656D` | `#34656D` | Button bg (text `#FAF8F1`) | 6.12 |
 | `--attention` | `#FAEAB1` | `#FAEAB1` | Needs-you bg (text `#334443` / `#1F2A29`) | 8.53 / 12.29 |
 | `--danger` | `#B4483C` | `#E8917F` | Errors, deny, failed tool | 5.02 / 6.18 |
-| `--warning` | `#8A6A12` | `#FAEAB1` | Warnings (text only + icon) | 4.76 / 12.29 |
-| `--border` | `#334443` @ 12% | `#FAF8F1` @ 12% | Dividers (decorative) | — |
+| `--warning` | `#826310` | `#FAEAB1` | Warnings (text only + icon) | 4.88 (worst surface) / 12.29. Was `#8A6A12`: only 4.39 on `--surface-sunken`, caught by `ui/src/theme.test.ts` |
+| `--border` | `#334443` @ 14% | `#FAF8F1` @ 14% | Dividers (decorative) | — |
+| `--primary-contrast` | `#FAF8F1` | `#FAF8F1` | Text on `--primary-fill` | 6.12 |
+| `--attention-text` | `#334443` | `#1F2A29` | Text on `--attention` | 8.53 / 12.29 |
+
+Tailwind aliases (in `theme.css` `@theme`): `paper`=bg, `card`=surface, `well`=surface-sunken, `ink`=text, `muted`, `accent`=primary, `accent-fill`, `on-accent`, `attention`, `on-attention`, `danger`, `caution`=warning, `line`=border → `bg-paper text-ink border-line`. Tailwind's default palette is removed (`--color-*: initial`), so a stray `bg-red-500` simply does nothing.
 
 - Teal `#34656D` as *text* on dark is 2.27:1 → never used as text in dark mode; dark uses `#7FB3BA`.
 - Status never by colour alone: icon + label (✓ done, ✗ failed, ● running, ◆ needs you).
@@ -333,15 +337,15 @@ Derived colours are added only where the palette has no answer (error, warning, 
 - Inspector opens when a card's "Open" is clicked (diff, full output, plan) and is resizable; closed by default.
 - Tabs (M5) sit above the header; each tab = one session with a state badge.
 
-### 7.3 Breakpoints (container-driven, mobile-first CSS)
+### 7.3 Breakpoints (measured on the shell itself, not the window)
 | Width | Layout |
 |---|---|
 | **≥ 1440** | Sidebar (260, collapsible) + transcript + inspector docked (420, resizable) |
-| **1024–1439** | Sidebar collapsible to icon rail (56); inspector docked when open, transcript shrinks to min 560 then inspector becomes overlay |
+| **1024–1439** | Sidebar is a 56 px icon rail (Ctrl+B widens it to 260); inspector docked when open **only if the shell is ≥ 1036 px wide** (56 + 560 transcript + 420), otherwise an overlay sheet |
 | **720–1023** | Sidebar = slide-over drawer (hamburger); inspector = right overlay sheet (80% width); lanes strip scrolls horizontally |
 | **< 720** (narrow window, split screen) | Single column; header condenses to project + state + overflow menu; inspector = full-screen sheet with back; permission/question cards stick to bottom above composer; status bar folds into header menu |
 
-- Cards use **container queries**, not viewport queries — a card in a 420-px inspector and in a 780-px transcript lays itself out from its own width.
+- `AppShell` measures its own width with a `ResizeObserver` (`shell/tier.ts`: `tierFor(width)`, tested at every boundary) and chooses structure from it; that is why `/dev/tokens` can show the shell inside a frame of any width. Cards use **container queries**, not viewport queries — a card in a 420-px inspector and in a 780-px transcript lays itself out from its own width.
 - Long content never widens the page: code/terminal blocks scroll horizontally inside themselves; paths middle-truncate (`C:\Users\…\src\store.ts`) with full path in tooltip; `overflow-wrap: anywhere` on prose.
 - Touch/pointer: hit targets ≥ 32 px (mouse) / 44 px when `(pointer: coarse)`; hover-only actions also reachable by focus and an overflow button.
 - Height: composer grows to 40% of viewport then scrolls; uses `dvh`, not `vh`.
@@ -366,9 +370,12 @@ Derived colours are added only where the palette has no answer (error, warning, 
 | `quick` | 160 ms | Card expand, chip enter, toast |
 | `base` | 240 ms | Panel/sheet open, lane spawn |
 | `slow` | 360 ms | Layout reflow of lanes, rare |
-| `ease-out` | `cubic-bezier(0.2, 0.8, 0.2, 1)` | Enter |
-| `ease-in` | `cubic-bezier(0.4, 0, 1, 1)` | Exit (exits are ~20% faster than enters) |
-| `spring` | stiffness 400, damping 32 | Progress fills, drag/resize settle |
+| `ease.out` | `cubic-bezier(0.23, 1, 0.32, 1)` | Enter **and exit** (strong ease-out; the built-in one is too weak) |
+| `ease.inOut` | `cubic-bezier(0.77, 0, 0.175, 1)` | Things that move on screen |
+| `ease.drawer` | `cubic-bezier(0.32, 0.72, 0, 1)` | Sidebar drawer, inspector sheet |
+| `spring` | `{type:'spring', duration:0.4, bounce:0.15}` | Only where a gesture can be interrupted (M3 lanes layout) |
+
+**`ease-in` is never used on UI** (it starts slow, so it delays the exact moment the user is watching); exits are faster than enters (drawer 160 ms out, 240 ms in) but use the same ease-out. Implemented as CSS variables `--dur-*` / `--ease-*` in `theme.css` and mirrored in `motion.ts`; `conventions.test.ts` fails the build on `ease-in`, `transition-all`, `scale(0)` or a colour literal outside `theme.css`.
 
 ### 8.2 What animates (each tied to a real event)
 | Trigger (event) | Animation |
@@ -389,6 +396,9 @@ Derived colours are added only where the palette has no answer (error, warning, 
 | User actions | Sheets slide from their edge (`base`), drawers push, press = scale 0.97 |
 
 ### 8.3 Motion rules
+- **Tool order** (CSS first): CSS transition / `@starting-style` for enters, hover and press; CSS keyframes only for the three one-shots (glow, shake, breathing dot); Motion (`motion` package) only for lane layout animation and springs in M3. The `motion` package is therefore **not installed yet**.
+- **Keyboard-driven actions never animate** (Y/N/A decisions, Ctrl+B, Ctrl+I, Esc): the card or panel changes instantly (`instant` / `data-instant`). Frequent actions get no motion; the delight budget is spent on rare events (a permission request, a failure).
+- Press feedback is `scale(0.97)`; entering elements start from opacity 0 and a 4 px rise, never from `scale(0)`.
 - Animate only `transform` and `opacity` (plus colour). Never animate height of the virtualized list items — expand uses Motion `layout` on the card only, list re-measures after.
 - **Replay guard:** events delivered by `replay_from`/resume, and any event older than 2 s on arrival, render with no animation.
 - **Burst guard:** if more than 10 events of the same kind arrive within one 100-ms window (e.g. 50 Read calls), skip enter animations for that batch.
@@ -464,12 +474,14 @@ Derived colours are added only where the palette has no answer (error, warning, 
 
 ## 11. Milestones
 
-### M0 — UX spec (before UI code)
+### M0 — UX spec (before UI code) — ✅ done 2026-10-25
 1. Low-fi wireframes for: onboarding, project picker, empty session, running transcript with tool cards, permission card, plan review, lanes, narrow (<720) layout.
 2. `theme.css` + `motion.ts` with the tokens from §6 and §8; a single `/dev/tokens` page showing every token, both themes, and every card state with fake events.
 3. Keyboard map (§9.2) confirmed.
 
 **Done when:** the dev page renders every state in §7.1 at all 4 breakpoints in light and dark, and passes an axe check with zero contrast errors.
+
+**Result:** `/dev/shell?state=<name>` renders each of 23 states (splash, three onboarding failures, project picker + trust, empty, idle, running, permission ×2, question, plan, todo + 9 lanes, disconnected, rate-limited, limit warning, retrying, crashed, hostile content, failed tool, bypass, inspector) and `/dev/tokens` is the gallery (tokens, type, motion lab, scripted fake session, every card, gauges, banners, responsive iframe). `e2e/states.e2e.ts` runs all 23 × 4 widths × light/dark (**184 pages**) plus the gallery: zero axe violations (WCAG 2.1 A/AA incl. contrast) and no horizontal page scroll. `e2e/behavior.e2e.ts` (26 tests) covers Y/N/A and reasons, question, plan, drawer/rail/dock behaviour, the crash boundary, the animation gate (50 tools → 10 animate, 40 instant; replay → 0 animate), reduced motion, theme switch. Unit tests: contrast of every token pair computed from `theme.css`, dark blocks identical, animation gate, tiers, text helpers, code conventions. What the work changed in the plan: `--warning` darkened (§6.2); motion curves replaced (§8.1); tiers measured on the shell (§7.3); todo strip stays dormant (§13.2). Not built (by design, later milestones): live store/events (M1 step 3), markdown and Shiki (M4), Radix/shadcn menus (first needed in M2 for real), virtualization (M1 step 4), Motion layout animation (M3).
 
 ### M1 — Talk to it
 1. Audit packages (report risk / permissions / postinstall), then scaffold workspaces.
@@ -628,14 +640,17 @@ Follow the global CLAUDE.md protocol: report risk / permissions / postinstall fo
 
 Nothing else without a line in this table.
 
-**Audit done 2026-10-25 (step 1):** all 31 packages above plus the SDK's three peers (`zod`, `@anthropic-ai/sdk`, `@modelcontextprotocol/sdk`, auto-installed by npm) and the SDK's platform binary package (`@anthropic-ai/claude-agent-sdk-win32-x64`, 297 MB, official Anthropic publisher) — **Risk: Low**. No `preinstall`/`install`/`postinstall` on any direct dependency. In the full tree of 241 packages only `esbuild` (checksum check; its binary ships as a separate package) and `fsevents` (macOS only) have install scripts; installs use `--ignore-scripts` and neither is run. `anser` chosen over `ansi-to-html` (last published 2021). `typescript` is **7.0.2** (native compiler); `tsc` works unchanged. Packages not yet installed (still audited, install when first used): `zustand`, `react-virtuoso`, `motion`, `react-markdown`, `remark-gfm`, `shiki`, `diff2html`, `lucide-react`, `anser`, `tailwindcss`, `@tailwindcss/vite`, `@axe-core/playwright`. Re-run `npm view <pkg> version time.modified scripts` right before installing them in case a newer release changed the picture.
+**Audit done 2026-10-25 (step 1):** all 31 packages above plus the SDK's three peers (`zod`, `@anthropic-ai/sdk`, `@modelcontextprotocol/sdk`, auto-installed by npm) and the SDK's platform binary package (`@anthropic-ai/claude-agent-sdk-win32-x64`, 297 MB, official Anthropic publisher) — **Risk: Low**. No `preinstall`/`install`/`postinstall` on any direct dependency. In the full tree of 241 packages only `esbuild` (checksum check; its binary ships as a separate package) and `fsevents` (macOS only) have install scripts; installs use `--ignore-scripts` and neither is run. `anser` chosen over `ansi-to-html` (last published 2021). `typescript` is **7.0.2** (native compiler); `tsc` works unchanged. Packages not yet installed (still audited, install when first used): see "Added in M0" below. Re-run `npm view <pkg> version time.modified scripts` right before installing them in case a newer release changed the picture.
 
-**Installed so far (exact pins):** `@anthropic-ai/claude-agent-sdk` 0.3.310, `ws` 8.22.0, `tsx` 4.23.15, `@types/ws` 8.18.2, `vite` 8.3.5, `react` / `react-dom` 19.3.1, `@vitejs/plugin-react` 6.1.2, `@types/react` / `@types/react-dom` 19.3.0, `typescript` 7.0.2, `@types/node` 26.6.5, `vitest` 5.0.5, `@playwright/test` 1.64.1.
+**Added in M0:** `lucide-react` 1.61.0, `tailwindcss` + `@tailwindcss/vite` 4.3.3 (no install scripts; native binary via the `@tailwindcss/oxide-win32-x64-msvc` optional package), `@axe-core/playwright` 4.14.0. **Still audited but not installed:** `zustand`, `react-virtuoso`, `motion`, `react-markdown`, `remark-gfm`, `shiki`, `diff2html`, `anser`.
+
+**Installed at step 1/2 (exact pins):** `@anthropic-ai/claude-agent-sdk` 0.3.310, `ws` 8.22.0, `tsx` 4.23.15, `@types/ws` 8.18.2, `vite` 8.3.5, `react` / `react-dom` 19.3.1, `@vitejs/plugin-react` 6.1.2, `@types/react` / `@types/react-dom` 19.3.0, `typescript` 7.0.2, `@types/node` 26.6.5, `vitest` 5.0.5, `@playwright/test` 1.64.1.
 
 ### 14.6 Tests
 - `vitest` for `bridge/src/normalize.ts`, `eventlog.ts`, Command validation, and `ui/src/store.ts`. Fixtures in `bridge/test/fixtures/*.jsonl` (one SDK message per line): recorded real sessions + the hostile cases of §10.
 - `@playwright/test` + `@axe-core/playwright` for the `/dev/tokens` page (M0) and one smoke flow per milestone, run against `npm run dev` with a **fake bridge mode** (`--fake <fixture>` replays a fixture instead of calling the SDK), so UI tests never spend tokens.
 - Commands: `npm test` (vitest), `npm run e2e` (playwright), `npm run typecheck` (`tsc -p` per workspace, `--noEmit`; no project references). A step is done only when all three pass.
+- UI dev routes (stripped from production builds by `import.meta.env.DEV`): `/dev/tokens` (gallery) and `/dev/shell?state=<scenario>[&theme=light|dark]` (one scenario filling the window; names in `ui/src/dev/scenario-names.ts`, shared with the tests and enforced by a `Record<ScenarioName, …>` type).
 - E2E specs are named `*.e2e.ts` (Playwright `testMatch`) so vitest never picks them up. E2E runs on port **4318** with the fixed token in `e2e/token.ts` (bridge started by `e2e/server.ts`), using the Edge that ships with Windows (`channel: 'msedge'`), so no browser download is needed.
 - Tests that need a server use port `0` (ephemeral), never a fixed port.
 
@@ -649,5 +664,5 @@ Nothing else without a line in this table.
 ### 14.8 Build order
 1. ✅ **Done 2026-10-25** — M1 step 1: `git init`, package audit, workspaces scaffold, bridge serving the UI (Vite middleware in dev, static `ui/dist` in production), token handshake (§14.2–14.3). Covered by 7 vitest tests (handshake, Origin, token) and 5 Playwright tests (link connects, hash stripped, reload, bad token, bad Host).
 2. ✅ **Done 2026-10-25** — M1 step 2: `bridge/scripts/probe.ts` ran 14 real sessions and saved the raw messages as fixtures; findings in §13.2 and already folded into §2/§3. Run it again whenever the SDK or CLI version changes (`npm view @anthropic-ai/claude-agent-sdk version`), diff the fixtures, and fix `normalize.ts`.
-3. M0 (tokens, motion, `/dev/tokens` page with fake events, axe check).
+3. ✅ **Done 2026-10-25** — M0 (tokens, motion, `/dev/tokens` + `/dev/shell` with fake events, axe matrix). See §11 M0 result.
 4. M1 steps 3–5, then M2 → M5 in order.
