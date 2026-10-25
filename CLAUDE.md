@@ -4,7 +4,9 @@ A local web UI (later Electron) on top of Claude Code, built on the Agent SDK. *
 
 ## Status
 - 2026-10-25: planning finished.
-- 2026-10-25: **M1 step 1 done** (scaffold, package audit, bridge + token handshake, 7 unit + 5 e2e tests passing). Next: §14.8 step 2, the SDK probe script. The SDK is installed; its types are in `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts` (10k lines) and are the source of truth over the docs page.
+- 2026-10-25: **M1 step 1 done** (scaffold, package audit, bridge + token handshake, 7 unit + 5 e2e tests passing).
+- 2026-10-25: **M1 step 2 done**: `bridge/scripts/probe.ts` ran 14 real sessions; raw messages are fixtures in `bridge/test/fixtures/`; results in PLAN.md §13.2 and folded into §2/§3. Key surprises: `result` is not the end of a session (use `session_state_changed: idle`); `session_init` repeats every turn; no todo tool exists in SDK sessions; Stop gives `error_during_execution` + `aborted_tools` and the session survives; user messages need a `uuid` (rewind key); history comes from the SDK (`listSessions`/`getSessionMessages`), not `.jsonl` parsing.
+- **Next: §14.8 step 3 = M0** (design tokens `theme.css`, `motion.ts`, `/dev/tokens` page with fake events, axe check), then M1 steps 3–5. Install the UI packages audited in §14.5 as each is first used (re-check `npm view <pkg> time.modified scripts` first).
 - Update this Status list at the end of every finished step: date, what's done, what's next.
 
 ## How to work here

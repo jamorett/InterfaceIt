@@ -4,7 +4,7 @@ A visual UI on top of Claude Code. Claude Code (via the Agent SDK, which runs th
 
 Planned 2026-10-25 against `claude` CLI 2.1.310. Revised 2026-10-25: UX spec, design system, responsiveness, motion, full CLI feature coverage, resilience.
 
-> **⚠ = still unverified.** Most items were checked on 2026-10-25 against `claude --help` (CLI 2.1.310) and the TS SDK reference (`@anthropic-ai/claude-agent-sdk` 0.3.310) — see §13. The remaining ⚠ items are checked in M1 step 2.
+> **⚠ = still unverified.** Checked on 2026-10-25 against `claude --help` (CLI 2.1.310), the SDK's own type definitions (`@anthropic-ai/claude-agent-sdk` 0.3.310) and real sessions run by the probe (M1 step 2) — see §13. What is left is listed in §13.2 and blocks nothing before M2.
 
 ---
 
@@ -42,7 +42,7 @@ Planned 2026-10-25 against `claude` CLI 2.1.310. Revised 2026-10-25: UX spec, de
 ┌──────────────┴──────────────────────────▼───────────────┐
 │ Local bridge (Node, 127.0.0.1 only + random token)      │
 │  SessionManager: one SDK query() per session            │
-│  normalize.ts: SDK messages AND .jsonl history → UiEvent│
+│  normalize.ts: SDK messages AND SDK history → UiEvent   │
 │  eventlog.ts: per-session append-only log, seq numbers  │
 │  fs.ts: folder picker, file read for diffs, @-mentions  │
 └──────────────┬──────────────────────────────────────────┘
@@ -59,9 +59,9 @@ ClaudeInterface/
 ├─ bridge/src/
 │  ├─ server.ts            # ws on 127.0.0.1, token, Origin check, Command validation
 │  ├─ session.ts           # SessionManager: query() per session, interrupt, canUseTool
-│  ├─ normalize.ts         # SDK message + .jsonl line → UiEvent (ONLY file that knows those shapes)
+│  ├─ normalize.ts         # SDK message + SDK `SessionMessage` → UiEvent (ONLY file that knows those shapes)
 │  ├─ eventlog.ts          # append, seq, replay-from(seq), output truncation
-│  ├─ history.ts           # list sessions from ~/.claude/projects (delegates parsing to normalize)
+│  ├─ history.ts           # thin wrapper over the SDK's listSessions / getSessionMessages / getSubagentMessages / forkSession / renameSession / deleteSession — no hand-written .jsonl parsing
 │  ├─ fs.ts                # list dirs, read file (for diff preview), fuzzy file search
 │  └─ preflight.ts         # CLI present? version? logged in? (onboarding)
 └─ ui/src/
@@ -88,32 +88,35 @@ Every event carries `{sessionId, seq, ts, parentId?}`. `seq` is monotonic per se
 | Event | Purpose |
 |---|---|
 | `preflight {cli, version, loggedIn, authMode}` | Onboarding screen (§7.1) |
-| `session_init {tools, model, effort, mode, mcpServers, slashCommands, agents, skills, outputStyle, cwd, addDirs}` | Palettes, renderer lookup, header |
-| `session_state {state}` — `idle · running · awaiting_permission · awaiting_answer · compacting · retrying · rate_limited · error · ended` | **Drives every status UI**: Stop button, tab badge, composer, notifications. Derived by the bridge from pending callbacks + `status` (compacting) + `api_retry` + `rate_limit_event` + `result`. SDK's own `session_state_changed` (only `idle·running·requires_action`, needs env `CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1`) is used as a cross-check. |
+| `session_init {tools, model, effort, mode, mcpServers, slashCommands, agents, skills, outputStyle, cwd, addDirs, capabilities, fastMode, authMode}` | Palettes, renderer lookup, header. **Arrives once per turn** (and again for local `/slash` commands), and the tool list can grow between turns (30 → 38 seen) → the store *replaces* the previous init, never appends. `authMode` = `apiKeySource` (`none` = subscription login). |
+| `session_state {state}` — `idle · running · awaiting_permission · awaiting_answer · compacting · retrying · rate_limited · error · ended` | **Drives every status UI**: Stop button, tab badge, composer, notifications. Verified: SDK `session_state_changed` (`running · idle · requires_action`, needs env `CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1`) is reliable, so **`idle` from it is the only "turn really finished" signal** — a `result` is *not*: with a background subagent the first `result` arrives while the agent still runs, and a second turn (new `init` + `result`) follows by itself. `requires_action` fires while a permission is pending. The richer states are derived by the bridge from that + pending callbacks + `status` + `api_retry` + `rate_limit_event`. |
+| `command {uuid, state: queued·started·completed·cancelled}` | From SDK `command_lifecycle` (uuid = the `uuid` we put on the user message). Drives the queued-message strip; `cancelled` on Stop. |
+| `thinking_progress {estimatedTokens}` | From SDK `system/thinking_tokens` → live "Thinking… ~280 tokens". The thinking *text* is empty by default (`display: omitted`), so the card shows tokens and elapsed time, not text, unless the user turns on summaries (`thinking: {type:'adaptive'·'enabled', display:'summarized'}`). |
 | `auth {state, output}` | From SDK `auth_status` → Onboarding / re-login banner |
 | `user_message {id, text, images, queued?}` | Echo, incl. queued-while-running |
-| `text_delta`, `thinking_delta {blockId, text}` / `block_end {blockId}` | Streaming |
-| `tool_start {id, name, input, parentId}` / `tool_progress {id, elapsedSec}` / `tool_end {id, result, isError, truncated, bytes}` | Tool cards. SDK `tool_progress` is an **elapsed-time heartbeat, not output** — Bash output arrives only in the final result, so cards show a live timer, not live lines. |
+| `text_delta`, `thinking_delta {blockId, text}` / `block_end {blockId}` | Streaming (SDK `stream_event`: `text_delta`, `thinking_delta`, `signature_delta` (ignore), `input_json_delta`). Subagent streams carry `parent_tool_use_id`. |
+| `tool_start {id, name, input, parentId}` / `tool_input_delta {id, partialJson}` / `tool_progress {id, elapsedSec}` / `tool_end {id, result, isError, truncated, bytes}` | Tool cards. `input_json_delta` streams a tool's input while the model writes it (133 deltas in one small session) → the card can show "Writing `src/x.ts`…" early; **coalesce per frame**. SDK `tool_progress` is an **elapsed-time heartbeat, not output** (and did not appear in a 4-second run) — Bash output arrives only in the final result, so cards show a live timer, not live lines. Tool names go through the SDK's exported `LEGACY_TOOL_NAME_ALIASES` (`init.tools` says `Task`, the model calls `Agent`). |
 | `tool_summary {ids, text}` | From SDK `tool_use_summary` → one-line label for a group of collapsed cards |
-| `permission_request {reqId, tool, input, agentId, suggestions, reason, blockedPath, mcpServer}` / `permission_resolved {reqId, by}` | Cards; `resolved` closes duplicates in other windows. Fields map 1:1 to `canUseTool` options (`requestId`, `agentID`, `suggestions`, `decisionReason`, `blockedPath`, `mcpServer`); hide "Always allow" when `suppressAlwaysAllowRule`, default focus to Deny when `defaultToNo`. |
-| `permission_denied {tool, reason}` | From SDK `permission_denied` (auto-denied by mode/rules) → muted row in transcript |
-| `question {reqId, questions}` (AskUserQuestion, incl. `multiSelect`, `preview`) | Choice form |
-| `elicitation {reqId, server, message, mode: form·url, schema?, url?}` | MCP server asking for input via `onElicitation`. `form` → generated form; `url` → "Open in browser" + "Done". Unhandled = auto-declined by SDK, so the bridge must always wire it. |
-| `plan {reqId, markdown}` | ExitPlanMode review |
-| `todos {items, agentId}` | Progress (TodoWrite or task tools — detected from `session_init`, never hardcoded) |
-| `subagent {id, type, description, state, depth, parentTaskId, tokens, toolUses, lastTool, summary}` | Lane lifecycle, from SDK `task_started` / `task_progress` / `task_notification` (`completed·failed·stopped`) |
-| `background_tasks {tasks}` | Full live set from SDK `background_tasks_changed` (replace, don't merge) |
+| `permission_request {reqId, tool, input, agentId, suggestions, reason, reasonType, displayName, description, blockedPath, mcpServer, requiresUserInteraction}` / `permission_resolved {reqId, by}` | Cards; `resolved` closes duplicates in other windows. Fields map 1:1 to `canUseTool` options (verified: `requestId`, `toolUseID`, `displayName`, `description`, `suggestions`, `decisionReason`, `decisionReasonType`, `requiresUserInteraction`; typed but not yet seen: `agentID`, `blockedPath`, `mcpServer`, `defaultToNo`, `suppressAlwaysAllowRule`). Hide "Always allow" when `suppressAlwaysAllowRule`; default focus to Deny when `defaultToNo`. **`canUseTool` is called only when the CLI would really prompt** — read-only Bash (`echo`) and `Read` never reach it. Observed `suggestions`: Edit/Write → `[{type:'setMode', mode:'acceptEdits', destination:'session'}]`; Bash → `[{type:'addRules', rules:[{toolName:'Bash', ruleContent:'<exact command>'}], behavior:'allow', destination:'localSettings'}]`. `AskUserQuestion` and `ExitPlanMode` arrive here too with `requiresUserInteraction: true` and no suggestions. |
+| `permission_denied {tool, reason}` | From SDK `permission_denied` (auto-denied by mode/rules) → muted row in transcript. A denial *we* send (`behavior:'deny', message`) comes back as an `is_error` tool result carrying our message, and is listed in `result.permission_denials[{tool_name, tool_use_id, tool_input}]`. |
+| `question {reqId, questions}` (AskUserQuestion, incl. `multiSelect`, `preview`) | Choice form. Reply = allow with `updatedInput: {...input, answers: {[questionText]: label}}` (multi-select labels comma-joined) — **verified, the model answered "Blue"**. `toolConfig.askUserQuestion.previewFormat` stays `'markdown'`. |
+| `elicitation {reqId, server, message, mode: form·url, schema?, url?, title?}` | MCP server asking for input via `onElicitation` (`ElicitationRequest {serverName, message, mode, url, elicitationId, requestedSchema, title, displayName, description}`; reply is the MCP `ElicitResult {action: accept·decline·cancel, content?}`). Unhandled = auto-declined by SDK, so the bridge must always wire it. Not triggered by the probe (types only). |
+| `dialog {reqId, dialogKind, payload, toolUseId?}` | NEW: SDK `onUserDialog` (`UserDialogRequest`). Unknown `dialogKind` must be answered `{behavior: 'cancelled'}` or it stays parked; the bridge wires it from day one and renders only kinds it knows. |
+| `plan {reqId, markdown}` | ExitPlanMode review. It arrives as a `canUseTool` request with `input.plan` (markdown). In plan mode the model first writes the plan to `~/.claude/plans/*.md` (auto-allowed), and after approval `status.permissionMode` flips to `default`. |
+| `todos {items, agentId}` | **Not available in this setup:** neither `TodoWrite` nor `TaskCreate/Update` is in the tool list or among the 21 deferred tools of CLI 2.1.310 SDK sessions (also with the `claude_code` tools preset and `CLAUDE_CODE_ENABLE_TASKS=1`). The renderer is still built, from the SDK types (`TodoWriteInput {todos:[{content,status,activeForm}]}`, `TaskCreateInput {subject,description,activeForm}`, `TaskUpdateInput {taskId,status}`) and hand-made fixtures, and the strip stays hidden when no such tool is seen. Never hardcode. |
+| `subagent {id, type, description, state, depth, parentTaskId, tokens, toolUses, lastTool, summary, background}` | Lane lifecycle, from SDK `task_started {task_id, tool_use_id, description, subagent_type, is_backgrounded, spawn_depth, task_type, prompt}` / `task_progress` (not seen in short runs) / `task_updated {patch:{status,end_time}}` / `task_notification {status: completed·failed·stopped, summary, usage{total_tokens,tool_uses,duration_ms}, output_file}`. `task_type`: `local_agent` → lane; **`local_bash` → a shell chip, not a lane**. Forwarded subagent messages carry top-level `agent_id`, `subagent_type`, `task_description` and `parent_tool_use_id` = the Agent `tool_use` id. |
+| `background_tasks {tasks}` | Full live set from SDK `background_tasks_changed` (replace, don't merge). Subagents may start in the background on their own (`async_launched`, `isAsync`). |
 | `hook {event, name, outcome, message}` | Timeline badge, from `hook_started` / `hook_progress` / `hook_response` (`includeHookEvents: true`) |
-| `compact {trigger: auto·manual, before, after}` | From `compact_boundary` → marker in transcript (field names ⚠) |
-| `usage {totalTokens, maxTokens, percentage, categories}` | Context gauge. Bridge calls `getContextUsage()` after each `result` (exact return shape ⚠) |
-| `rate_limit {status: allowed·allowed_warning·rejected, resetsAt, utilization}` | From SDK `rate_limit_event.rate_limit_info` → usage meter, warning, blocked state |
+| `compact {trigger: auto·manual, preTokens, postTokens?, durationMs?}` | From `compact_boundary.compact_metadata {trigger, pre_tokens, post_tokens?, duration_ms?}` (types; not triggered by the probe) → marker in transcript. `status {status:'compacting'}` marks the start. |
+| `usage {totalTokens, maxTokens, percentage, categories[{id,name,tokens,color,kind}]}` | Context gauge. Bridge calls `getContextUsage({detail:'summary'})` after each `idle` — **verified**; it returns camelCase (`totalTokens`, `maxTokens`, `rawMaxTokens`, `percentage`, `autocompactSource`, `categories`, `gridRows`) even though the `SDKContextUsage` *type* is snake_case. Window here is 1,000,000 tokens. |
+| `rate_limit {status: allowed·allowed_warning·rejected, resetsAt, rateLimitType, utilization, windows{five_hour, seven_day}}` | From SDK `rate_limit_event.rate_limit_info` — verified. `utilization` is a **fraction 0–1** and `resetsAt` **epoch seconds**; `unifiedWindows.five_hour / seven_day` each have `{utilization, resetsAt, status, surpassedThreshold?}`; also `overageStatus`, `isUsingOverage`. The event fires every turn, `allowed_warning` once past 75%. The experimental `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET()` returns the same windows as **percent 0–100** with ISO `resets_at`, plus `subscription_type` and per-model cost — use only for an on-demand "Usage" sheet, behind a try/catch. |
 | `suggestion {text}` | From SDK `prompt_suggestion` (one per turn, `promptSuggestions: true`) → chip |
 | `checkpoint {userMessageId}` | Every user message's `uuid` is a rewind target (`enableFileCheckpointing: true`) |
-| `retrying {attempt, …}` | From SDK `api_retry` (fields ⚠) → inline "Retrying…" |
+| `retrying {attempt, maxRetries, delayMs, status, error}` | From SDK `api_retry {attempt, max_retries, retry_delay_ms, error_status, error}` (type; not triggered) → inline "Retrying (2/10)…". |
 | `conversation_reset` | From SDK `conversation_reset` (`/clear`) → divider, context gauge to 0 |
 | `commands_changed` | From SDK `commands_changed` → refresh slash/palette lists |
 | `notice {level, text}` | `informational`, `notification`, `model_refusal_fallback`, `model_refusal_no_fallback`, `worker_shutting_down`, `plugin_install` |
-| `result {ok, errorKind?, costUsd, usage, modelUsage, durationMs, turns, fastMode?, denials}` | End of turn. `errorKind` = `max_turns · during_execution · max_budget_usd · max_structured_output_retries` |
+| `result {ok, stopped, errorKind?, terminalReason, costUsd, usage, modelUsage, durationMs, turns, fastMode?, denials, userMessageUuid}` | End of **one turn** (not of the session — see `session_state`). `errorKind` = `max_turns · during_execution · max_budget_usd · max_structured_output_retries`. **A Stop gives `subtype: error_during_execution` with `terminal_reason: 'aborted_tools'` → `stopped: true`, shown as "Stopped", never as an error** (its `errors[]` holds an internal `[ede_diagnostic]` string: don't display it). `terminal_reason: 'completed'` on success. A local `/context` returns `num_turns: 0`, cost 0, and its text arrives as an `assistant` message with `model: '<synthetic>'` → flag `synthetic`. |
 | `error {code, message, recoverable}` | Error card / state screen |
 | `unknown {raw}` | Never crash; shown only in Debug view |
 
@@ -123,13 +126,13 @@ Every event carries `{sessionId, seq, ts, parentId?}`. `seq` is monotonic per se
 |---|---|
 | `start {cwd, addDirs, model, effort, mode, worktree?}` | New session |
 | `resume {sessionId}` · `fork {sessionId, atMessageId?}` · `rename` · `close` · `list_sessions` | Session management |
-| `prompt {text, images, mentions}` | While running → queued (default) |
-| `interrupt` · `interrupt_and_send {text}` | Stop / steer |
+| `prompt {text, images, mentions}` | Bridge gives every user message a fresh `uuid` (**required: it is the rewind checkpoint key and the `command_lifecycle` id**) and sends `{type:'user', uuid, message:{role:'user', content}, parent_tool_use_id:null}` into the session's input stream. While a turn runs the SDK queues it itself (verified: `queued` → `started` after the first turn completes, in order). |
+| `interrupt` · `interrupt_and_send {text}` | Stop / steer. `interrupt()` is verified: pending tool tasks end `stopped`, the queued command becomes `cancelled`, the turn ends with the `stopped` result, **and the same session accepts the next prompt** (verified: replied "alive"). It returns `{still_queued: [uuid…]}`. `interrupt_and_send` = interrupt then send; the SDK's `priority: 'now'` (capability `interrupt_send_now_v1`) is untested → keep the two-step version until the probe covers it. |
 | `permission_reply {reqId, decision: allow·deny, scope: once·session·project·user, editedInput?, reason?}` | Full permission semantics |
-| `answer {reqId, answers}` · `elicitation_reply {reqId, values · declined}` · `plan_reply {reqId, approve·reject, autoAcceptEdits?, feedback?}` | Replies |
+| `answer {reqId, answers}` · `elicitation_reply {reqId, action: accept·decline·cancel, content?}` · `plan_reply {reqId, approve·reject, autoAcceptEdits?, feedback?}` · `dialog_reply {reqId, behavior, …}` | Replies |
 | `set_mode` · `set_model` · `set_effort` · `set_output_style` | Header controls |
-| `slash {name, args}` · `compact {instructions?}` | Sent as prompt text `/name args` (⚠ confirm in M1) |
-| `rewind {userMessageId, what: code·conversation·both, dryRun?}` | code → `rewindFiles(uuid, {dryRun})` (preview shows `filesChanged`, `insertions`, `deletions`); conversation → new `query()` with `resume` + `resumeSessionAt: uuid` + `forkSession: true` |
+| `slash {name, args}` · `compact {instructions?}` | Sent as prompt text `/name args` — **verified** with `/context`: handled locally, no API call, answer arrives as a synthetic assistant message |
+| `rewind {userMessageId, what: code·conversation·both, dryRun?}` | **Verified.** code → `rewindFiles(uuid, {dryRun})`, needs `enableFileCheckpointing` **and a persisted session**, returns `{canRewind, filesChanged[], insertions, deletions}` (it found the edited `hello.txt`; without persistence: "No file checkpoint found"). conversation → new `query()` with `resume` + `resumeSessionAt: <assistant message uuid>` + `forkSession: true`: forking after the first reply of a 2-turn chat and asking "which number?" answered **7**, not 9, under a new session id. |
 | `stop_task {taskId}` | `stopTask()` — kill background shell/agent |
 | `mcp {server, action: reconnect·enable·disable}` | `reconnectMcpServer` / `toggleMcpServer` |
 | `hello {token}` | Must be the first message (§14.3) |
@@ -174,20 +177,20 @@ Legend: **UI** = native UI · **Palette** = runs via Ctrl+K and renders its outp
 | Interrupt | `interrupt()` | Stop button, Esc (§9 for conflicts). Pending permission on Stop → auto-denied, card shows "cancelled" |
 | Message queue while running | streaming input | Queued messages shown greyed above composer, editable/removable until sent |
 | Checkpoints / rewind (Esc Esc in CLI) | `enableFileCheckpointing` + `rewindFiles(uuid, {dryRun})` for code; `resumeSessionAt` + `forkSession` for conversation | Hover a past user message → "Rewind to here" (code / conversation / both) with dry-run preview "3 files, +12 −40" + "Edit & resend". Show `skippedLinks` if > 0 |
-| Sandbox ⚠ | settings | Status bar badge when active |
+| Sandbox ⚠ | `sandbox` option / settings (types only; no sandbox field seen in `init`) | Status bar badge when active — decide in M5 |
 
 ### 3.3 Agents & sessions
 | Feature | Source | UI |
 |---|---|---|
-| Todo / task list | TodoWrite or Task* tools | Progress strip "3 / 7 · Running tests…" (activeForm text); per-agent lists in lanes; hidden when no list |
+| Todo / task list | TodoWrite or Task* tools — **neither exists in SDK sessions of CLI 2.1.310** (§13.2), so this is built from the SDK types + hand-made fixtures and may stay dormant until a CLI version exposes one | Progress strip "3 / 7 · Running tests…" (activeForm text); per-agent lists in lanes; hidden when no list |
 | Subagents | Agent tool + `parentId`, `forwardSubagentText: true`, `task_*` messages | Lanes (§7.4) with live token / tool-use counts from `task_progress`; click lane → focuses its transcript |
 | Custom agents `/agents` | `session_init.agents` | Palette + Settings › Agents (read, open file) |
-| Agent teams / SendMessage ⚠ | tool events | Generic card first; lanes show message arrows later |
+| Agent teams / SendMessage ⚠ | `SendMessage`, `ListAgents` are in `init.tools`; behaviour untested | Generic card first; lanes show message arrows later |
 | Background agents (`--bg`, `agents`, `attach`, `logs`, `stop`, `rm`) | CLI; `claude agents --json` lists them without a TTY | Running-agents dashboard (M5): list from `agents --json`, Stop / Delete via CLI, "Open here" = SDK `resume` once stopped |
 | Sessions: resume / continue / fork / name | SDK + `.jsonl` | Sidebar grouped by project, search, rename, "branch from here" |
 | Worktrees | `--worktree` / EnterWorktree | "Isolated branch" toggle at start; worktree badge in header |
 | Multiple dirs `--add-dir` | option | Header chip list, add/remove |
-| Scheduled / loop / cron tasks ⚠ | tools | Generic card; dashboard later |
+| Scheduled / loop / cron tasks | `CronCreate/Delete/List`, `ScheduleWakeup`, `Monitor` are in `init.tools` | Generic card; dashboard later |
 | `/compact`, auto-compact | system message | Compaction marker in transcript; context gauge drops visibly |
 | `/clear` | slash | New session in same tab (old one stays in sidebar) |
 | `/export` | log | Export transcript as Markdown / JSON (from our event log) |
@@ -196,10 +199,10 @@ Legend: **UI** = native UI · **Palette** = runs via Ctrl+K and renders its outp
 | Feature | Source | UI |
 |---|---|---|
 | Context usage `/context` | `getContextUsage()` | Context gauge in status bar; warns at 80%, suggests `/compact`; tooltip breaks down by `categories` |
-| Cost `/cost` | `result.total_cost_usd`, `modelUsage` | API mode: $ per turn/session. Subscription mode: hidden, show limits instead (mode from `accountInfo()` ⚠ fields) |
+| Cost `/cost` | `result.total_cost_usd`, `modelUsage` | API mode: $ per turn/session. Subscription mode: hidden, show limits instead. **Mode = `init.apiKeySource`** (`none` = subscription login; verified) cross-checked with `accountInfo() → {subscriptionType: 'Claude Pro', apiProvider: 'firstParty', email, organization}` (email/organization are private: never log them) |
 | Usage limits `/usage` | `rate_limit_event` (`allowed · allowed_warning · rejected`, `resetsAt`, `utilization`) | Meter; `allowed_warning` → butter banner; `rejected` → "Limit reached — resets 14:30", composer disabled with countdown |
-| Model + fallback | `supportedModels()`, `setModel()`, `--fallback-model` ⚠ SDK option name, `model_refusal_fallback` | Model dropdown from `supportedModels()`; toast when a fallback model answers |
-| Fast mode | `result.fast_mode_state` (how to toggle from SDK ⚠) | Indicator in model dropdown |
+| Model + fallback | `supportedModels()` (verified: `value` = alias `default·opus·sonnet·fable·haiku` or full name, plus `displayName`, `description`, `supportsEffort`, `supportedEffortLevels`, `supportsFastMode`, `supportsAdaptiveThinking`, `supportsThinkingOff`), `setModel()`, option `fallbackModel` (string), `model_refusal_fallback` | Model dropdown from `supportedModels()`, effort dropdown limited to that model's `supportedEffortLevels`; toast when a fallback model answers |
+| Fast mode ⚠ | `init.fast_mode_state` (`off·cooldown·on`) + `fast_mode_disabled_reason` — in SDK sessions it is `off` / **`sdk_opt_in_required`**; toggle per the types is `applyFlagSettings({fastMode: true})`, untested | Indicator in model dropdown; the switch is shown only for models with `supportsFastMode`, and only after the toggle is verified |
 | `/status`, `/doctor` | palette | Output in a sheet |
 | Custom statusline | `statusLine` command in settings | Run the user's command via bridge, show its text in status bar (strip ANSI → tokens) |
 | Hooks | `includeHookEvents: true` → `hook_started/progress/response` | Small badge on the turn/tool it fired on; blocked-by-hook → card shows hook message |
@@ -210,7 +213,7 @@ Legend: **UI** = native UI · **Palette** = runs via Ctrl+K and renders its outp
 | Feature | UI |
 |---|---|
 | Slash commands, skills, plugins | Ctrl+K palette from `session_init`; `/` in composer opens same list inline |
-| MCP servers `/mcp` | `mcpServerStatus()` → status dots (connected / failed / needs auth); Reconnect / Enable / Disable buttons (`reconnectMcpServer`, `toggleMcpServer`); OAuth sign-in flow ⚠ |
+| MCP servers `/mcp` | `mcpServerStatus()` → status dots (connected / failed / needs auth); Reconnect / Enable / Disable buttons (`reconnectMcpServer`, `toggleMcpServer`). `McpServerStatus.status` = `connected·failed·needs-auth·pending·disabled` (verified: a claude.ai connector showed `pending` then `connected`). **The SDK has no MCP sign-in method**: `needs-auth` shows "Sign in from a terminal with `claude mcp`" (servers that use URL elicitation are covered by the `elicitation` card). |
 | Slash commands / agents lists | `supportedCommands()`, `supportedAgents()`, refreshed on `commands_changed` |
 | MCP prompts (`/mcp__server__prompt`) | Listed in slash picker |
 | CLAUDE.md / memory `/memory` | Editor sheet (project / user / local), plain textarea + markdown preview |
@@ -228,7 +231,7 @@ Legend: **UI** = native UI · **Palette** = runs via Ctrl+K and renders its outp
 ## 4. Rules (scalability / future harness changes)
 
 1. **Event-sourced:** bridge appends normalized events per session with `seq`; UI renders the log. Gives reconnect, replay, multi-window, debugging.
-2. **Only `normalize.ts` knows SDK and `.jsonl` shapes.** A CLI update = fix one file. Unknown events → `unknown`, logged, never crash.
+2. **Only `normalize.ts` knows SDK message shapes** (live `SDKMessage` and history `SessionMessage`). A CLI update = fix one file. Unknown events → `unknown`, logged, never crash. The probe already found three types the docs summary missed (`command_lifecycle`, `system/thinking_tokens`, `system/task_updated`), so this rule is not hypothetical.
 3. **Never hardcode the tool list.** Read it from `session_init`; unknown tools use the Generic card. Fancy renderers are opt-in.
 4. **One `query()` per session** → multi-session for free.
 5. **Virtualized transcript** (`react-virtuoso`) for long sessions.
@@ -448,7 +451,7 @@ Derived colours are added only where the palette has no answer (error, warning, 
 | 50+ parallel subagents / deep nesting | Lanes overflow menu; nesting indentation capped at 3 levels then flattened with breadcrumb |
 | 10k+ message session | Virtualized; Shiki highlighting lazy for visible blocks only |
 | Two windows on same session | Both get events; first reply wins, `permission_resolved` closes the other card |
-| Bridge restart | UI shows Disconnected → reconnect → `resume` from `.jsonl` |
+| Bridge restart | UI shows Disconnected → reconnect → bridge rebuilds sessions with the SDK's `getSessionMessages` (no hand-parsing) |
 | Session switch mid-stream | Store is keyed by sessionId; background sessions keep receiving |
 | Permission request while user away | OS notification; request waits (no timeout) and tab/title badge shows ◆ |
 | Huge pasted prompt / image | Composer limits: warn above 100 KB text; images downscaled client-side above 2000 px |
@@ -470,7 +473,7 @@ Derived colours are added only where the palette has no answer (error, warning, 
 
 ### M1 — Talk to it
 1. Audit packages (report risk / permissions / postinstall), then scaffold workspaces.
-2. Verify the remaining ⚠ items (§13) with a throwaway script that prints raw SDK messages: `compact_boundary`/`api_retry` fields, `getContextUsage()` and `accountInfo()` shapes, slash commands as prompt text, fallback-model option, fast-mode toggle, MCP OAuth, agent teams, scheduled tasks, sandbox. Record a fixture of each message seen.
+2. ✅ Verified with `bridge/scripts/probe.ts` against the real SDK (results in §13.2; fixtures in `bridge/test/fixtures/`).
 3. Bridge: ws server → `query()` with streaming input + partial messages → `normalize` → `eventlog` with `seq`. Preflight.
 4. UI: shell layout (responsive), Onboarding + project picker, Composer (send, queue, Stop), Transcript with auto-scroll + jump-to-latest, Generic tool card, Disconnected state.
 5. Test: recorded + hostile fixtures through `normalize`, assert events.
@@ -480,7 +483,7 @@ Derived colours are added only where the palette has no answer (error, warning, 
 ### M2 — Control
 Permission card (all scopes, deny with reason, edit input), AskUserQuestion form (multi-select, Other, preview), plan review, todo strip, mode switcher, message queue, notifications, session_state everywhere, motion for these events.
 
-**Done when:** in `manual` mode every write asks inline with a diff preview, Y/N works from the keyboard, the todo strip advances as items complete, and a permission request while the window is unfocused fires an OS notification.
+**Done when:** in `manual` mode every write asks inline with a diff preview, Y/N works from the keyboard, the todo strip advances as items complete (proved with a hand-made fixture, because live SDK sessions currently expose no todo tool), and a permission request while the window is unfocused fires an OS notification.
 
 ### M3 — Agents & sessions
 Subagent lanes with layout animation, session sidebar (resume/fork/rename/search), `.jsonl` history through `normalize`, usage/context gauge, compaction marker, rate-limit state, background shells.
@@ -500,7 +503,7 @@ Multiple tabs with state badges, background agents dashboard, settings & memory 
 ---
 
 ## 12. Open items
-- Remaining ⚠ items (§13, resolved in M1 step 2).
+- Remaining ⚠ items (§13.2 "Still unverified"): fast-mode toggle, `priority: 'now'`, hook events, compaction, API retry, elicitation, sandbox, agent teams. None blocks M0/M1.
 - Product name and logo (needed before M5; placeholder until then).
 - ANSI converter and diff library choice — decided at the package audit.
 - Spanish UI strings — after M5, by adding a second strings file.
@@ -508,6 +511,8 @@ Multiple tabs with state badges, background agents dashboard, settings & memory 
 ---
 
 ## 13. Verification log (2026-10-25)
+
+### 13.1 From the docs, CLI help and SDK reference
 Sources: `claude --help`, `claude auth --help`, `claude agents --help` (CLI 2.1.310); TS SDK reference at code.claude.com/docs/en/agent-sdk/typescript; `npm view @anthropic-ai/claude-agent-sdk` → 0.3.310.
 
 | Item | Result | Plan change |
@@ -522,7 +527,7 @@ Sources: `claude --help`, `claude auth --help`, `claude agents --help` (CLI 2.1.
 | Background tasks | ✅ `background_tasks_changed` (full set), `backgroundTasks()`, `stopTask()` | Status-bar chips + Stop |
 | Rate limits | ✅ `rate_limit_event.rate_limit_info {status, resetsAt, utilization}` | Usage meter + blocked state |
 | Session state | ✅ `session_state_changed` but only 3 states and needs `CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS=1` | Bridge derives the richer state itself |
-| Compacting | ✅ `status {status: "compacting"}`, `compact_boundary` exists | Field names of `compact_boundary` still ⚠ |
+| Compacting | ✅ `status {status: "compacting"}`, `compact_boundary.compact_metadata` (types) | See §13.2 |
 | Rewind | ✅ `rewindFiles(uuid, {dryRun})` → `{canRewind, filesChanged, insertions, deletions, skippedLinks}`; conversation via `resumeSessionAt` | Rewind moved out of "maybe" |
 | Elicitation | ✅ `onElicitation`; modes `form · url`; unhandled = auto-decline | Always wired |
 | Prompt suggestions | ✅ one `prompt_suggestion {suggestion}` per turn | One chip, not several |
@@ -530,9 +535,48 @@ Sources: `claude --help`, `claude auth --help`, `claude agents --help` (CLI 2.1.
 | Auth | ✅ `claude auth status`; SDK `auth_status` message | Preflight + re-login banner |
 | Workspace trust | ❗ skipped in SDK/print mode | App asks itself in project picker |
 | Background agents CLI | ✅ `claude agents --json` works without a TTY | Dashboard reads it |
-| Context usage | ✅ `getContextUsage()` exists | Return shape ⚠ |
+| Context usage | ✅ `getContextUsage()` | Shape verified in §13.2 |
 | Other Query methods | ✅ `setModel`, `supportedModels/Commands/Agents`, `mcpServerStatus`, `reconnectMcpServer`, `toggleMcpServer`, `updateSettings`, `accountInfo`, `readFile`, `streamInput`, `close` | Wired into §3 |
-| Still ⚠ | `compact_boundary` / `api_retry` / `notification` fields, `getContextUsage()` and `accountInfo()` shapes, `ElicitationResult` exact shape, slash commands as prompt text, `--fallback-model` SDK option, fast-mode toggle, MCP OAuth from SDK, agent teams, scheduled tasks, sandbox status | M1 step 2 |
+| Still ⚠ | see §13.2 | — |
+
+### 13.2 From real sessions (M1 step 2, `bridge/scripts/probe.ts`)
+Ran 14 small sessions on `haiku` (low effort, isolated settings, scratch directory) through the SDK 0.3.310 / CLI 2.1.310 on the subscription login (`apiKeySource: none`, plan "Claude Pro"). Raw messages are in `bridge/test/fixtures/<scenario>.jsonl` (personal paths, username, email redacted), method results in `*.notes.json`, session-history calls in `history.json`. Re-run: `PROBE_CWD=<empty scratch dir> npx tsx bridge/scripts/probe.ts [scenario…]` (costs a few cents of usage; scenarios: basic edit todo tasks subagent interrupt queue ask plan denial slash, plus `resume`).
+
+| Question | Result | Where it landed |
+|---|---|---|
+| Does a real turn match the docs? | ✅ `init` → `status:requesting` → `stream_event`s → `assistant` per block → `user` (tool_result) → `result`, framed by `session_state_changed running/idle` and `command_lifecycle` | §2 |
+| New message types the docs summary missed | ❗ `command_lifecycle`, `system/thinking_tokens`, `system/task_updated`; `rate_limit_event` also carries `unifiedWindows` | §2 events |
+| Is `result` the end of a turn? | ❗ Only of one turn: a background subagent made a 2nd `init`+`result` follow; true idle = `session_state_changed: idle` | §2 `session_state` |
+| `session_init` once? | ❗ No: once per turn, tool list changed 30→38 | §2 `session_init` |
+| Permission callback | ✅ fires only when the CLI would prompt; real option fields and `suggestions` seen | §2 `permission_request` |
+| Allow / deny round-trip | ✅ deny message becomes the tool_result; `result.permission_denials` filled | §2 |
+| AskUserQuestion | ✅ `updatedInput: {...input, answers:{question: label}}` → model said "Blue" | §2 `question` |
+| ExitPlanMode | ✅ `canUseTool` request with `input.plan`; mode becomes `default` after | §2 `plan` |
+| Stop | ✅ `interrupt()` → `task_notification: stopped`, `command_lifecycle: cancelled`, `result error_during_execution` + `terminal_reason: aborted_tools`; **session still works afterwards** | §2 `result`, `interrupt` |
+| Message queue | ✅ 2nd message `queued` → `started` after the 1st completes | §2 `prompt` |
+| Slash commands as prompt text | ✅ `/context` runs locally (0 turns, `<synthetic>` assistant message) | §2 `slash` |
+| File rewind | ✅ needs a persisted session and a `uuid` we set on the user message; dry-run lists `filesChanged`, `insertions`, `deletions` | §2 `rewind` |
+| Conversation rewind | ✅ `resume` + `resumeSessionAt` + `forkSession`: answered 7 (not 9), new session id | §2 `rewind` |
+| History | ✅ SDK `listSessions`, `getSessionMessages`, `renameSession`, `forkSession`, `deleteSession` all work → no `.jsonl` parsing | §2 layout, §14.4 |
+| Context usage | ✅ `getContextUsage({detail:'summary'})` camelCase; 1,000,000-token window | §2 `usage` |
+| Account / auth mode | ✅ `accountInfo()` and `init.apiKeySource` | §3.4 |
+| Models | ✅ `supportedModels()` aliases + per-model effort levels + `supportsFastMode` | §3.4 |
+| Rate limits | ✅ event (fraction 0–1) and experimental `usage()` (percent 0–100) | §2 `rate_limit` |
+| Subagents | ✅ events and forwarded-message fields; `local_bash` tasks too | §2 `subagent` |
+| Streaming | ✅ `text_delta`, `thinking_delta` (text empty by default), `input_json_delta` | §2 |
+| Todo list | ❗ **No todo tool exists in SDK sessions of this CLI** (not in tools, not deferred) | §2 `todos` |
+| MCP sign-in | ❗ No SDK method | §3.5 |
+| `tool_progress` | not seen in a 4-second command; stays "heartbeat, not output" from the types | §2 |
+
+**Still unverified (⚠)** — none blocks M0/M1:
+- Fast-mode toggle (`applyFlagSettings({fastMode:true})`; reason in SDK sessions is `sdk_opt_in_required`).
+- `priority: 'now'` on a user message (capability `interrupt_send_now_v1`).
+- Hook events (`includeHookEvents` produced none because the probe isolates settings).
+- `compact_boundary` / `status: compacting` in practice, `api_retry`, `model_refusal_fallback` (types only).
+- MCP elicitation and `onUserDialog` (wired, never triggered).
+- `tool_progress` timing on long commands, `task_progress`/`agentProgressSummaries` on long subagents.
+- Sandbox badge, agent teams, scheduled tasks (tools exist; behaviour untested).
+- The probe used `settingSources: []`; behaviour with the user's real hooks/plugins/CLAUDE.md is first seen in M1 step 3.
 
 ---
 
@@ -550,7 +594,7 @@ Everything below is decided. Don't reopen it without a concrete reason found whi
 - Port: `127.0.0.1:4317`, override with env `CLAUDEINTERFACE_PORT`. Port busy → exit with a clear message (don't pick a random port silently).
 - WebSocket path: `/ws`. Vite's HMR socket shares the server; `attachWs` only handles `/ws` and leaves every other upgrade to Vite.
 - Flags: `--dev` (Vite middleware), `--no-open` (don't launch the browser).
-- `npm run dev` uses `tsx watch`, for a human at a terminal: **every bridge restart creates a new token**, so reopen the printed link. `tsx watch` hangs when stdin is a pipe (found in step 1), so anything automated (Playwright, scripts) runs `npx tsx bridge/src/main.ts --dev --no-open` instead.
+- `npm run dev` uses `tsx watch`, for a human at a terminal: **every bridge restart creates a new token**, so reopen the printed link. `tsx watch` hangs when stdin is a pipe (found in step 1), so anything automated runs `node --import tsx bridge/src/main.ts --dev --no-open` instead (one process). **Do not use Playwright's `webServer` for the bridge:** it starts the command through a shell, and on Windows killing that shell orphans the real `node` process, which keeps Playwright's pipes open so the run never exits and port 4318 stays taken. `e2e/server.ts` (Playwright `globalSetup`) spawns the process directly and kills it in teardown.
 - Every HTTP request is checked against the `Host` header (`127.0.0.1:<port>` / `localhost:<port>`), which blocks DNS rebinding; WS upgrades are checked against `Origin`.
 
 ### 14.3 Token flow
@@ -563,7 +607,9 @@ Everything below is decided. Don't reopen it without a concrete reason found whi
 7. Wrong or missing hello → the bridge closes the socket with code **4401**; the UI reads 4401 as "link invalid". Env `CLAUDEINTERFACE_TOKEN` (≥ 32 hex chars) overrides the random token **for tests only**.
 
 ### 14.4 Data and persistence
-- Live event log: in memory in the bridge, one array per session. After a bridge restart, sessions are rebuilt from the CLI's own `~/.claude/projects/*.jsonl` through `normalize.ts`. The app writes **no** transcript files of its own.
+- Live event log: in memory in the bridge, one array per session. After a bridge restart, sessions are rebuilt with the SDK's `listSessions({dir})` and `getSessionMessages(id, {dir})` (verified: `SDKSessionInfo {sessionId, summary, customTitle, firstPrompt, gitBranch, cwd, lastModified, fileSize, createdAt}`; messages are `{type, uuid, message, parent_tool_use_id, parent_agent_id}` with the same Anthropic message shape as live ones, but no stream events, so history never animates) through `normalize.ts`. The app writes **no** transcript files of its own and never parses `.jsonl`.
+- **Sessions must stay persisted** (`persistSession` default true): rewind, resume and history all depend on it.
+- Session options the bridge always sets: `includePartialMessages`, `includeHookEvents`, `forwardSubagentText`, `promptSuggestions`, `enableFileCheckpointing`, `canUseTool`, `onElicitation`, `onUserDialog`, and `env: {...process.env, CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: '1', CLAUDE_AGENT_SDK_CLIENT_APP: 'claudeinterface/<version>'}` (`env` **replaces** the child environment, so `process.env` must be spread). `settingSources` is left **omitted** so the user's CLAUDE.md, hooks, skills and permissions load exactly as in the CLI (the probe uses `[]` for isolation). `agentProgressSummaries: true` is opt-in per user (extra cost every ~30 s per subagent).
 - Tool results longer than 64 KB are stored whole in the bridge log, but sent truncated; `fetch_full {sessionId, toolId}` command returns the full text.
 - UI preferences (theme, density, pane widths, drafts, last project): `localStorage`, every access in try/catch.
 - Trusted folders: `%APPDATA%\ClaudeInterface\trusted.json` (list of absolute paths), written by the bridge only.
@@ -590,18 +636,18 @@ Nothing else without a line in this table.
 - `vitest` for `bridge/src/normalize.ts`, `eventlog.ts`, Command validation, and `ui/src/store.ts`. Fixtures in `bridge/test/fixtures/*.jsonl` (one SDK message per line): recorded real sessions + the hostile cases of §10.
 - `@playwright/test` + `@axe-core/playwright` for the `/dev/tokens` page (M0) and one smoke flow per milestone, run against `npm run dev` with a **fake bridge mode** (`--fake <fixture>` replays a fixture instead of calling the SDK), so UI tests never spend tokens.
 - Commands: `npm test` (vitest), `npm run e2e` (playwright), `npm run typecheck` (`tsc -p` per workspace, `--noEmit`; no project references). A step is done only when all three pass.
-- E2E specs are named `*.e2e.ts` (Playwright `testMatch`) so vitest never picks them up. E2E runs on port **4318** with the fixed token in `e2e/token.ts`, using the Edge that ships with Windows (`channel: 'msedge'`), so no browser download is needed.
+- E2E specs are named `*.e2e.ts` (Playwright `testMatch`) so vitest never picks them up. E2E runs on port **4318** with the fixed token in `e2e/token.ts` (bridge started by `e2e/server.ts`), using the Edge that ships with Windows (`channel: 'msedge'`), so no browser download is needed.
 - Tests that need a server use port `0` (ephemeral), never a fixed port.
 
 ### 14.7 Code conventions
 - Colours only through tokens in `ui/src/theme.css`; no hex anywhere else. Durations/easings only from `ui/src/motion.ts`.
 - User-facing text only in `ui/src/strings.ts`.
-- SDK and `.jsonl` types imported only in `bridge/src/normalize.ts` (and `session.ts` for calling `query()`). Everything else uses `shared/events.ts`.
+- SDK types imported only in `bridge/src/normalize.ts` (and `session.ts` / `history.ts` for calling the SDK). Everything else uses `shared/events.ts`. `bridge/scripts/probe.ts` is exempt: its job is to look at the SDK directly.
 - Named exports, one component per file, file names as in §2 layout.
 - Each renderer: reads only the fields it needs, falls back to Generic if they're missing, wrapped in the per-card error boundary.
 
 ### 14.8 Build order
 1. ✅ **Done 2026-10-25** — M1 step 1: `git init`, package audit, workspaces scaffold, bridge serving the UI (Vite middleware in dev, static `ui/dist` in production), token handshake (§14.2–14.3). Covered by 7 vitest tests (handshake, Origin, token) and 5 Playwright tests (link connects, hash stripped, reload, bad token, bad Host).
-2. M1 step 2: SDK probe script (`bridge/scripts/probe.ts`) that runs one real `query()` with every option from §13 on, prints every raw message, and saves it as a fixture. Resolve the remaining ⚠ items, update §2 contract and §13.
+2. ✅ **Done 2026-10-25** — M1 step 2: `bridge/scripts/probe.ts` ran 14 real sessions and saved the raw messages as fixtures; findings in §13.2 and already folded into §2/§3. Run it again whenever the SDK or CLI version changes (`npm view @anthropic-ai/claude-agent-sdk version`), diff the fixtures, and fix `normalize.ts`.
 3. M0 (tokens, motion, `/dev/tokens` page with fake events, axe check).
 4. M1 steps 3–5, then M2 → M5 in order.
