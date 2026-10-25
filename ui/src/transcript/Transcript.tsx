@@ -6,6 +6,7 @@ import { PlanReview } from '../cards/PlanReview.tsx';
 import { QuestionCard } from '../cards/QuestionCard.tsx';
 import { ToolCard } from '../cards/ToolCard.tsx';
 import type { PermissionDecision, PlanView, TranscriptItem } from '../model.ts';
+import { imageSrc } from '../state/describe.ts';
 import { strings } from '../strings.ts';
 import { formatTokens } from '../text.ts';
 import { CardBoundary, CrashCard } from './CardBoundary.tsx';
@@ -29,6 +30,7 @@ function Item({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: H
     case 'user':
       return (
         <p dir="auto" data-instant={item.instant ? '' : undefined} className="enter ml-auto max-w-[85%] rounded-card bg-accent-fill px-3 py-2 text-base whitespace-pre-wrap text-on-accent [overflow-wrap:anywhere]">
+          {item.images?.map((im, i) => { const src = imageSrc(im); return src && <img key={i} src={src} alt={strings.composer.attached(i + 1)} className="mb-2 max-h-48 rounded-control" />; })}
           {item.text}
         </p>
       );

@@ -22,9 +22,10 @@ export class FixtureSession extends SessionCore {
       const models = modelsEvent(JSON.parse(readFileSync(`${dir}basic.notes.json`, 'utf8')).methods.supportedModels);
       if (models) this.ingest([models]);
     } catch { /* no recorded model list: the UI keeps its defaults */ }
+    this.ingest([{ type: 'commands', commands: [{ name: 'review', description: 'Review the pending changes' }, { name: 'compact', description: 'Free up context', hint: '[focus]' }, { name: 'rewind', description: 'Go back to an earlier point' }] }]);
   }
 
-  protected deliver(_id: string, text: string): void {
+  protected deliver(_id: string, text: string, _images?: unknown): void {
     void this.play(/\[\[([\w-]+)\]\]/.exec(text)?.[1] ?? 'basic');
   }
 

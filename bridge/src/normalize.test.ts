@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { SessionEventBody } from '@ci/shared';
-import { createNormalizer, permissionEvent, permissionUpdates, toResult, usageEvent } from './normalize.ts';
+import { commandsEvent, createNormalizer, permissionEvent, permissionUpdates, toResult, usageEvent } from './normalize.ts';
 
 const dir = fileURLToPath(new URL('../test/fixtures/', import.meta.url));
 const lines = (name: string): Record<string, any>[] => readFileSync(dir + name + '.jsonl', 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -238,5 +238,18 @@ describe('usageEvent', () => {
   it('ignores answers it cannot read', () => {
     expect(usageEvent(null)).toBeUndefined();
     expect(usageEvent({ totalTokens: 5 })).toBeUndefined();
+  });
+});
+
+describe('commandsEvent', () => {
+  it('drops the leading slash and keeps description and hint', () => {
+    expect(commandsEvent([{ name: '/review', description: 'Review', argumentHint: '[pr]' }, { name: 'compact' }, { name: '' }])).toEqual({
+      type: 'commands',
+      commands: [{ name: 'review', description: 'Review', hint: '[pr]' }, { name: 'compact', description: undefined, hint: undefined }],
+    });
+  });
+  it('says nothing for an empty or odd answer', () => {
+    expect(commandsEvent([])).toBeUndefined();
+    expect(commandsEvent('nope')).toBeUndefined();
   });
 });

@@ -175,6 +175,15 @@ export const strings = {
     disabledLimit: 'Sending is paused until the limit resets.',
     disabledOffline: 'Sending is paused while disconnected.',
     disabledEnded: 'This session has ended. Resume it or start a new one.',
+    attached: (n: number) => `Attached image ${n}`,
+    removeImage: (n: number) => `Remove image ${n}`,
+    attach: 'Attach image',
+    tooMany: 'Up to 5 images per message.',
+    tooBig: 'That image is over 5 MB even after shrinking.',
+    notImage: 'Only PNG, JPEG, GIF and WebP images can be attached.',
+    commands: 'Commands',
+    files: 'Files',
+    noMatch: 'No matches',
   },
 
   transcript: {

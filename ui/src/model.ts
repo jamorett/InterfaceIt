@@ -75,7 +75,7 @@ export type LaneView = {
 export type TodoItem = { content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' };
 
 export type TranscriptItem =
-  | (Instant & { kind: 'user'; id: string; text: string })
+  | (Instant & { kind: 'user'; id: string; text: string; images?: { mediaType: string; data: string }[] })
   | (Instant & { kind: 'assistant'; id: string; text: string; streaming?: boolean; synthetic?: boolean })
   | { kind: 'thinking'; id: string; tokens: number; live: boolean; seconds?: number }
   | { kind: 'tool'; tool: ToolView }

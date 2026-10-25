@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { Preflight } from '@ci/shared';
 import { createApp, type Deps } from './app.ts';
 import { FixtureSession } from './fixture.ts';
+import { searchFiles } from './fs.ts';
 import { listPast, loadMessages } from './history.ts';
 import { preflight } from './preflight.ts';
 import { SdkSession } from './session.ts';
@@ -78,8 +79,8 @@ const manager = new SessionManager(
   fake ? async () => [] : loadMessages,
 );
 const deps: Deps = fake
-  ? { manager, preflight: async () => fakePreflight, listPast: async () => [], isTrusted: (c) => !c.includes('untrusted') || fakeTrusted.has(c), trust: (c) => void fakeTrusted.add(c), isFolder: () => true }
-  : { manager, preflight: () => preflight(), listPast, isTrusted: (c) => isTrusted(c), trust: (c) => trust(c) };
+  ? { manager, preflight: async () => fakePreflight, listPast: async () => [], isTrusted: (c) => !c.includes('untrusted') || fakeTrusted.has(c), trust: (c) => void fakeTrusted.add(c), isFolder: () => true, searchFiles: (_cwd, q) => ['README.md', 'ui/src/store.ts', 'ui/src/App.tsx', 'bridge/src/session.ts', 'docs/notes.md'].filter((p) => p.toLowerCase().includes(q.toLowerCase())) }
+  : { manager, preflight: () => preflight(), listPast, isTrusted: (c) => isTrusted(c), trust: (c) => trust(c), searchFiles: (cwd, q) => searchFiles(cwd, q) };
 attachWs(server, { token, allowedOrigins: hosts.map((h) => `http://${h}`), connect: createApp(deps) });
 for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { manager.closeAll(); process.exit(0); });
 

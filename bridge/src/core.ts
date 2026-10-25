@@ -2,7 +2,7 @@
 // run the prompt queue, and hold the questions Claude has asked until the user answers them.
 // The real session (session.ts) and the fixture replay used by the UI tests (fixture.ts) both extend this.
 import { randomUUID } from 'node:crypto';
-import type { Effort, PermissionMode, SessionEvent, SessionEventBody, SessionInfo } from '@ci/shared';
+import type { Effort, ImageData, PermissionMode, SessionEvent, SessionEventBody, SessionInfo } from '@ci/shared';
 import { EventLog } from './eventlog.ts';
 import { permissionUpdates } from './normalize.ts';
 import { StateTracker } from './state.ts';
@@ -26,7 +26,7 @@ export interface SessionLike {
   readonly log: EventLog;
   info(): SessionInfo;
   subscribe(fn: (e: SessionEvent) => void): () => void;
-  prompt(text: string): void;
+  prompt(text: string, images?: ImageData[]): void;
   unqueue(promptId: string): void;
   interrupt(): Promise<void>;
   permissionReply(reqId: string, decision: 'allow' | 'deny', scope?: 'once' | 'session' | 'local' | 'project' | 'user', reason?: string, editedInput?: Record<string, unknown>): void;
@@ -44,7 +44,7 @@ export abstract class SessionCore implements SessionLike {
   protected tracker = new StateTracker();
   protected ended = false;
   private listeners = new Set<(e: SessionEvent) => void>();
-  private queue: { id: string; text: string }[] = [];
+  private queue: { id: string; text: string; images?: ImageData[] }[] = [];
   /** a prompt was handed to the SDK but it has not said "running" yet: a second prompt must wait */
   private starting = false;
   private pending = new Map<string, Pending>();
@@ -55,7 +55,7 @@ export abstract class SessionCore implements SessionLike {
   }
 
   /** hand one prompt to whatever produces the answers */
-  protected abstract deliver(id: string, text: string): void;
+  protected abstract deliver(id: string, text: string, images?: ImageData[]): void;
   /** stop the running turn */
   protected abstract stop(): Promise<void>;
   abstract setMode(mode: PermissionMode): Promise<void>;
@@ -98,26 +98,27 @@ export abstract class SessionCore implements SessionLike {
   }
 
   // ---- prompts ----
-  prompt(text: string): void {
+  prompt(text: string, images?: ImageData[]): void {
     const id = randomUUID();
+    const pics = images?.length ? images : undefined;
     if (this.starting || this.tracker.busy || this.queue.length) {
-      this.queue.push({ id, text });
+      this.queue.push({ id, text, images: pics });
       this.ingest([{ type: 'prompt_queued', id, text }]);
-    } else this.send(id, text);
+    } else this.send(id, text, pics);
   }
 
-  private send(id: string, text: string) {
+  private send(id: string, text: string, images?: ImageData[]) {
     this.starting = true;
     if (this.title === 'New session') this.title = text.slice(0, 80);
-    this.ingest([{ type: 'user_message', id, text }]);
-    this.deliver(id, text);
+    this.ingest([{ type: 'user_message', id, text, ...(images && { images }) }]);
+    this.deliver(id, text, images);
   }
 
   private sendNext() {
     const next = this.queue.shift();
     if (!next) return;
     this.ingest([{ type: 'prompt_unqueued', id: next.id, reason: 'sent' }]);
-    this.send(next.id, next.text);
+    this.send(next.id, next.text, next.images);
   }
 
   unqueue(promptId: string): void {

@@ -12,6 +12,8 @@ export type Deps = {
   isTrusted: (cwd: string) => boolean;
   trust: (cwd: string) => void;
   isFolder?: (path: string) => boolean;
+  /** file names under a session's folder for "@" mentions */
+  searchFiles?: (cwd: string, query: string) => string[];
 };
 
 const defaultIsFolder = (p: string) => {
@@ -80,7 +82,12 @@ export function createApp(deps: Deps) {
             subscriptions.delete(cmd.sessionId);
             return deps.manager.close(cmd.sessionId);
           case 'replay_from': return attach(cmd.sessionId, cmd.seq);
-          case 'prompt': return session(cmd.sessionId)?.prompt(cmd.text);
+          case 'prompt': return session(cmd.sessionId)?.prompt(cmd.text, cmd.images);
+          case 'fs_search': {
+            const s = session(cmd.sessionId);
+            if (s && deps.searchFiles) send({ type: 'fs_results', sessionId: cmd.sessionId, query: cmd.query, paths: deps.searchFiles(s.cwd, cmd.query) });
+            return;
+          }
           case 'unqueue': return session(cmd.sessionId)?.unqueue(cmd.promptId);
           case 'fetch_full': {
             const text = session(cmd.sessionId)?.log.fullResult(cmd.toolId);

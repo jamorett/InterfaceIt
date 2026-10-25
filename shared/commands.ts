@@ -26,7 +26,15 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('close'), sessionId: id }),
   z.object({ type: z.literal('replay_from'), sessionId: id, seq: z.number().int().min(0) }),
 
-  z.object({ type: z.literal('prompt'), sessionId: id, text: z.string().min(1).max(200_000) }),
+  z.object({
+    type: z.literal('prompt'),
+    sessionId: id,
+    text: z.string().min(1).max(200_000),
+    // pasted or dropped pictures, as the browser read them (base64, about 5 MB each at most)
+    images: z.array(z.object({ mediaType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']), data: z.string().max(7_000_000).regex(/^[A-Za-z0-9+/]+={0,2}$/, 'not base64') })).max(5).optional(),
+  }),
+  /** file names under the session's folder that match what the user typed after "@" */
+  z.object({ type: z.literal('fs_search'), sessionId: id, query: z.string().max(200) }),
   z.object({ type: z.literal('unqueue'), sessionId: id, promptId: id }),
   /** the whole output of a tool whose result was cut for the wire */
   z.object({ type: z.literal('fetch_full'), sessionId: id, toolId: id }),

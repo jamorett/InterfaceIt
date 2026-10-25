@@ -16,6 +16,8 @@ export type SessionView = {
   state: SessionState;
   init?: Init;
   models: Models;
+  /** slash commands for the "/" picker and the palette */
+  commands: { name: string; description?: string; hint?: string }[];
   mode: PermissionMode;
   items: TranscriptItem[];
   queued: { id: string; text: string }[];
@@ -41,7 +43,7 @@ export const lanesOf = (v: SessionView): LaneView[] => v.tasks.filter((t) => t.t
 
 export function initialView(id: string, cwd: string): SessionView {
   return {
-    id, cwd, lastSeq: 0, state: 'idle', models: [], mode: 'default', items: [], queued: [],
+    id, cwd, lastSeq: 0, state: 'idle', models: [], commands: [], mode: 'default', items: [], queued: [],
     limits: { status: 'allowed' }, tasks: [], background: 0, todos: [], announce: '', starts: {}, asking: {},
   };
 }
@@ -84,6 +86,7 @@ export function reduce(view: SessionView, e: SessionEvent, instant: boolean): Se
   switch (e.type) {
     case 'session_init': return { ...v, init: e, mode: e.mode };
     case 'models': return { ...v, models: e.models };
+    case 'commands': return { ...v, commands: e.commands };
     case 'session_state': return { ...v, state: e.state, retrying: e.state === 'retrying' ? v.retrying : undefined };
     case 'status': return e.mode ? { ...v, mode: e.mode } : v;
     case 'usage': return { ...v, context: { totalTokens: e.totalTokens, maxTokens: e.maxTokens } };
@@ -94,7 +97,7 @@ export function reduce(view: SessionView, e: SessionEvent, instant: boolean): Se
     case 'prompt_queued': return { ...v, queued: [...v.queued, { id: e.id, text: e.text }] };
     case 'prompt_unqueued': return { ...v, queued: v.queued.filter((q) => q.id !== e.id) };
 
-    case 'user_message': return { ...add({ kind: 'user', id: e.id, text: e.text, ...flag }), suggestion: undefined };
+    case 'user_message': return { ...add({ kind: 'user', id: e.id, text: e.text, images: e.images, ...flag }), suggestion: undefined };
 
     case 'block_start': {
       if (e.parentId) return v; // a subagent's own text is shown with its lane (M3), not in the main conversation

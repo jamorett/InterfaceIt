@@ -27,7 +27,7 @@ const titleOf = (v: SessionView) => {
 const DEFAULT_MODELS = [{ value: 'default', label: 'Default' }];
 
 export function SessionScreen({ view }: { view: SessionView }) {
-  const { conn, attempt, past, views, order, dismissedLimit, debug } = useStore(useShallow((s) => ({ conn: s.conn, attempt: s.attempt, past: s.past, views: s.views, order: s.order, dismissedLimit: s.dismissedLimit, debug: s.debug })));
+  const { conn, attempt, past, views, order, dismissedLimit, debug, files } = useStore(useShallow((s) => ({ conn: s.conn, attempt: s.attempt, past: s.past, views: s.views, order: s.order, dismissedLimit: s.dismissedLimit, debug: s.debug, files: s.files })));
   const act = useStore.getState();
   // cards open this panel (a diff, a whole output, an image) through InspectorContext
   const [panel, setPanel] = useState<InspectorContent>();
@@ -101,6 +101,9 @@ export function SessionScreen({ view }: { view: SessionView }) {
             queued={view.queued.map((x) => x.text)}
             suggestion={view.suggestion}
             disabledReason={disabledReason}
+            commands={view.commands.length ? view.commands : (view.init?.slashCommands ?? []).map((name) => ({ name }))}
+            files={files}
+            onSearchFiles={act.searchFiles}
             onSend={act.prompt}
             onStop={act.stop}
             onRemoveQueued={(i) => view.queued[i] && act.unqueue(view.queued[i]!.id)}

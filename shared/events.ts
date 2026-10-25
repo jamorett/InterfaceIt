@@ -41,7 +41,8 @@ export type SessionEventBody =
   | { type: 'models'; models: { value: string; label: string; description?: string; efforts: Effort[]; fast: boolean }[] }
   | { type: 'sdk_state'; state: 'idle' | 'running' | 'requires_action' }
   | { type: 'status'; compacting: boolean; mode?: PermissionMode }
-  | { type: 'user_message'; id: string; text: string }
+  | { type: 'user_message'; id: string; text: string; images?: ImageData[] }
+  | { type: 'commands'; commands: { name: string; description?: string; hint?: string }[] }
   | { type: 'prompt_queued'; id: string; text: string }
   | { type: 'prompt_unqueued'; id: string; reason: 'sent' | 'removed' | 'stopped' }
   | { type: 'block_start'; blockId: string; kind: 'text' | 'thinking'; parentId?: string; synthetic?: boolean }
@@ -109,6 +110,7 @@ export type ServerEvent =
   | { type: 'session_list'; sessions: SessionInfo[] }
   | { type: 'session_opened'; sessionId: string; cwd: string; resumed: boolean }
   | { type: 'tool_full'; sessionId: string; toolId: string; text: string }
+  | { type: 'fs_results'; sessionId: string; query: string; paths: string[] }
   | { type: 'server_error'; code: 'untrusted_folder' | 'bad_command' | 'unknown_session' | 'start_failed' | 'not_a_folder'; message: string; detail?: string };
 
 export type UiEvent = ServerEvent | SessionEvent;

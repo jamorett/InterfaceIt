@@ -40,6 +40,8 @@ export type Store = {
   notice?: string;
   /** the usage-limit warning the user closed, by its reset time */
   dismissedLimit?: number;
+  /** latest answer to an "@" file search */
+  files?: { query: string; paths: string[] };
   debug: boolean;
 
   connect(token: string): void;
@@ -58,7 +60,8 @@ export type Store = {
   resumeCrashed(): void;
   dismissLimit(resetsAt: number): void;
 
-  prompt(text: string): void;
+  prompt(text: string, images?: { mediaType: string; data: string }[]): void;
+  searchFiles(query: string): void;
   stop(): void;
   unqueue(id: string): void;
   decide(reqId: string, d: PermissionDecision, reason?: string, edited?: Record<string, string>): void;
@@ -103,7 +106,7 @@ export const useStore = create<Store>()((set, get) => {
       const before: Record<string, SessionState | undefined> = {};
       for (const e of batch) if (isSessionEvent(e) && !(e.sessionId in before)) before[e.sessionId] = get().views[e.sessionId]?.state;
       set((s) => {
-        const next = { views: s.views, order: s.order, activeId: s.activeId, past: s.past, preflight: s.preflight, trusting: s.trusting, starting: s.starting, notice: s.notice };
+        const next = { views: s.views, order: s.order, activeId: s.activeId, past: s.past, preflight: s.preflight, trusting: s.trusting, starting: s.starting, notice: s.notice, files: s.files };
         for (const e of batch) {
           if (isSessionEvent(e)) {
             const view = next.views[e.sessionId] ?? initialView(e.sessionId, '');
@@ -114,6 +117,7 @@ export const useStore = create<Store>()((set, get) => {
           }
           switch (e.type) {
             case 'preflight': next.preflight = e.preflight; break;
+            case 'fs_results': next.files = { query: e.query, paths: e.paths }; break;
             case 'tool_full': {
               const v = next.views[e.sessionId];
               if (v) next.views = { ...next.views, [e.sessionId]: applyFull(v, e.toolId, e.text) };
@@ -200,7 +204,8 @@ export const useStore = create<Store>()((set, get) => {
     },
     dismissLimit: (resetsAt) => set({ dismissedLimit: resetsAt }),
 
-    prompt: (text) => sendTo((sessionId) => ({ type: 'prompt', sessionId, text })),
+    prompt: (text, images) => sendTo((sessionId) => ({ type: 'prompt', sessionId, text, ...(images?.length && { images: images as never }) })),
+    searchFiles: (query) => sendTo((sessionId) => ({ type: 'fs_search', sessionId, query })),
     stop: () => sendTo((sessionId) => ({ type: 'interrupt', sessionId })),
     unqueue: (promptId) => sendTo((sessionId) => ({ type: 'unqueue', sessionId, promptId })),
     decide(reqId, d, reason, edited) {

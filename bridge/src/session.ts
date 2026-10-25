@@ -1,9 +1,9 @@
 // A live conversation with Claude Code through the Agent SDK. One `query()` per session (PLAN.md §4 rule 4).
 import { randomUUID } from 'node:crypto';
 import { query, type CanUseTool, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { Effort, PermissionMode } from '@ci/shared';
+import type { Effort, ImageData, PermissionMode } from '@ci/shared';
 import { SessionCore, type Decision } from './core.ts';
-import { createNormalizer, modelsEvent, permissionEvent, usageEvent } from './normalize.ts';
+import { commandsEvent, createNormalizer, modelsEvent, permissionEvent, usageEvent } from './normalize.ts';
 import { Pushable } from './pushable.ts';
 
 export type SessionSpec = {
@@ -66,6 +66,7 @@ export class SdkSession extends SessionCore {
         const bodies = this.normalizer.push(msg);
         this.ingest(bodies);
         if (bodies.some((b) => b.type === 'session_init') && !this.modelsSent) void this.sendModels();
+        if (bodies.some((b) => b.type === 'session_init' || b.type === 'commands_changed')) void this.sendCommands();
         if (bodies.some((b) => b.type === 'sdk_state' && b.state === 'idle')) void this.refreshUsage();
       }
       this.finish('finished');
@@ -90,6 +91,14 @@ export class SdkSession extends SessionCore {
     } catch { /* the header just keeps its default list */ }
   }
 
+  /** the slash commands (names and descriptions): asked again whenever Claude Code says they changed */
+  private async sendCommands() {
+    try {
+      const e = commandsEvent(await this.q.supportedCommands());
+      if (e) this.ingest([e]);
+    } catch { /* the list from session_init (names only) stays */ }
+  }
+
   private async refreshUsage() {
     try {
       const e = usageEvent(await this.q.getContextUsage({ detail: 'summary' }));
@@ -97,8 +106,10 @@ export class SdkSession extends SessionCore {
     } catch { /* the gauge keeps its last value */ }
   }
 
-  protected deliver(id: string, text: string): void {
-    this.input.push({ type: 'user', uuid: id, message: { role: 'user', content: text }, parent_tool_use_id: null } as SDKUserMessage);
+  protected deliver(id: string, text: string, images?: ImageData[]): void {
+    // pictures go first, then the words, as the Messages API expects for "look at this and answer"
+    const content = images?.length ? [...images.map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data } })), { type: 'text', text }] : text;
+    this.input.push({ type: 'user', uuid: id, message: { role: 'user', content }, parent_tool_use_id: null } as SDKUserMessage);
   }
 
   protected async stop(): Promise<void> {

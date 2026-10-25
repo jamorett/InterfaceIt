@@ -340,3 +340,9 @@ export function modelsEvent(resp: unknown): SessionEventBody | undefined {
   })).filter((m) => m.value);
   return models.length ? { type: 'models', models } : undefined;
 }
+
+/** `supportedCommands()` → commands event, for the `/` picker and the palette. */
+export function commandsEvent(resp: unknown): SessionEventBody | undefined {
+  const commands = arr(resp).filter(isObj).map((c) => ({ name: str(c.name).replace(/^\//, ''), description: str(c.description) || undefined, hint: str(c.argumentHint) || undefined })).filter((c) => c.name);
+  return commands.length ? { type: 'commands', commands } : undefined;
+}

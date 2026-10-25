@@ -58,6 +58,48 @@ test.describe('a conversation', () => {
   });
 });
 
+test.describe('the composer helps', () => {
+  test('"/" lists the commands of the session and Enter completes the highlighted one without sending', async ({ page }) => {
+    await start(page);
+    const box = page.getByLabel('Message');
+    await box.fill('/re');
+    await expect(page.getByRole('listbox').getByRole('option')).toHaveCount(2);
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(box).toHaveValue('/rewind ');
+    await expect(page.getByRole('listbox')).toHaveCount(0);
+  });
+
+  test('Escape closes the list but keeps the draft', async ({ page }) => {
+    await start(page);
+    const box = page.getByLabel('Message');
+    await box.fill('/co');
+    await expect(page.getByRole('listbox')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('listbox')).toHaveCount(0);
+    await expect(box).toHaveValue('/co');
+  });
+
+  test('"@" finds files by name and inserts the path', async ({ page }) => {
+    await start(page);
+    const box = page.getByLabel('Message');
+    await box.fill('look at @read');
+    await expect(page.getByRole('option', { name: 'README.md' })).toBeVisible();
+    await page.keyboard.press('Enter');
+    await expect(box).toHaveValue('look at @README.md ');
+  });
+
+  test('a picture is attached, shown small, and travels with the message', async ({ page }) => {
+    await start(page);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+    await page.locator('input[type=file]').setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png });
+    await expect(page.getByAltText('Attached image 1')).toBeVisible();
+    await say(page, '[[basic]] what is this');
+    await expect(page.getByAltText('Attached image 1')).toHaveCount(1); // now in the transcript, gone from the tray
+    await idle(page);
+  });
+});
+
 test.describe('Claude asks, the user answers', () => {
   test('Y approves an edit, the tab title flags it while waiting, and the turn continues', async ({ page }) => {
     await start(page);
