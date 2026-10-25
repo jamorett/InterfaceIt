@@ -1,7 +1,7 @@
 // The ONLY file that knows what the Agent SDK's messages look like (PLAN.md §4 rule 2). It turns them into
 // the UI contract in shared/events.ts. SDK payloads are not trusted shapes (they change with every CLI release),
 // so every field goes through the guards below and anything unexpected becomes an `unknown` event, never an exception.
-import { effortLevels, type AuthMode, type Effort, type PermissionMode, type Question, type SessionEventBody, type ToolResult } from '@ci/shared';
+import { effortLevels, type AuthMode, type Effort, type ImageData, type PermissionMode, type Question, type SessionEventBody, type ToolResult } from '@ci/shared';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type J = Record<string, any>;
@@ -19,17 +19,27 @@ function authMode(apiKeySource: unknown): AuthMode {
   return s ? 'apikey' : 'other';
 }
 
+const MAX_IMAGES = 3;
+const MAX_IMAGE_CHARS = 2_500_000; // base64 characters: about 1.8 MB of picture
+
 export function toResult(content: unknown): ToolResult {
   if (typeof content === 'string') return { text: content, images: 0 };
   let images = 0;
+  const imageData: ImageData[] = [];
   const parts: string[] = [];
   for (const c of arr(content)) {
     if (!isObj(c)) continue;
     if (c.type === 'text') parts.push(str(c.text));
-    else if (c.type === 'image') images++;
-    else if (c.type === 'tool_reference') parts.push(`[tool: ${str(c.tool_name)}]`);
+    else if (c.type === 'image') {
+      images++;
+      const s = c.source;
+      // only pictures that arrive inline and are small enough to send; the media type is checked so it can be used in a data: URL
+      if (isObj(s) && s.type === 'base64' && /^image\/(png|jpe?g|gif|webp)$/.test(str(s.media_type)) && str(s.data).length <= MAX_IMAGE_CHARS && imageData.length < MAX_IMAGES) {
+        imageData.push({ mediaType: str(s.media_type), data: str(s.data) });
+      }
+    } else if (c.type === 'tool_reference') parts.push(`[tool: ${str(c.tool_name)}]`);
   }
-  return { text: parts.join('\n'), images };
+  return { text: parts.join('\n'), images, ...(imageData.length && { imageData }) };
 }
 
 const taskState = (s: unknown) =>

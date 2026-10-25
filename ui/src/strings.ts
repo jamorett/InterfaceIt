@@ -55,6 +55,9 @@ export const strings = {
     elapsed: (s: number) => (s < 10 ? `${s.toFixed(1)}s` : s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`),
     truncated: (kb: number) => `Output cut at the first 64 KB (${kb} KB total).`,
     showFull: 'Show full output',
+    openPanel: 'Open in side panel',
+    image: 'Image from the tool',
+    loading: 'Loading…',
     expand: 'Show details',
     collapse: 'Hide details',
     empty: '(no output)',
@@ -234,5 +237,24 @@ export const strings = {
 
   markdown: { copy: 'Copy', copied: 'Copied', image: 'image', table: 'Table' },
 
-  inspector: { title: 'Details', close: 'Close details' },
+  notify: {
+    permission: 'Claude needs your approval',
+    question: 'Claude has a question',
+    done: 'Claude finished',
+    limit: 'Usage limit reached',
+    error: 'Something went wrong',
+  },
+
+  edit: {
+    button: 'Edit command…',
+    label: 'Command to run',
+    allowEdited: 'Allow edited command',
+    cancel: 'Keep original',
+  },
+
+  diff: { preview: 'Change preview', full: 'Change', open: 'Open details', added: (n: number) => `+${n}`, removed: (n: number) => `−${n}` },
+
+  shortcuts: { modeChanged: (mode: string) => `Permissions: ${mode}` },
+
+  inspector: { title: 'Details', close: 'Close details', cut: (shown: string, total: string) => `Showing the first ${shown} of ${total} characters.` },
 };

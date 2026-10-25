@@ -1,5 +1,5 @@
 import { ArrowDown, Minimize2, Square } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { PermissionCard } from '../cards/PermissionCard.tsx';
 import { PlanReview } from '../cards/PlanReview.tsx';
@@ -18,8 +18,9 @@ function keyOf(item: TranscriptItem): string {
 }
 
 export type Handlers = {
-  onPermission?: (id: string, decision: PermissionDecision, reason?: string) => void;
+  onPermission?: (id: string, decision: PermissionDecision, reason?: string, edited?: Record<string, string>) => void;
   onAnswer?: (id: string, answers: string[]) => void;
+  onFull?: (toolId: string) => void;
   onPlan?: (id: string, decision: NonNullable<PlanView['decision']>, feedback?: string) => void;
 };
 
@@ -49,9 +50,9 @@ function Item({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: H
         </p>
       );
     case 'tool':
-      return <ToolCard tool={item.tool} />;
+      return <ToolCard tool={item.tool} onFull={on.onFull} />;
     case 'permission':
-      return <PermissionCard view={item.view} onDecide={(d, r) => on.onPermission?.(item.view.id, d, r)} />;
+      return <PermissionCard view={item.view} onDecide={(d, r, ed) => on.onPermission?.(item.view.id, d, r, ed)} />;
     case 'question':
       return <QuestionCard view={item.view} onAnswer={(a) => on.onAnswer?.(item.view.id, a)} />;
     case 'plan':
@@ -85,6 +86,12 @@ function Item({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: H
     case 'crash':
       return <CrashCard raw={item.raw} />;
   }
+}
+
+/** positions of the cards that still wait for an answer */
+export function waitingIndexes(items: TranscriptItem[]): number[] {
+  return items.flatMap((it, i) =>
+    (it.kind === 'permission' && !it.view.decision) || (it.kind === 'question' && !it.view.answer) || (it.kind === 'plan' && !it.view.decision) ? [i] : []);
 }
 
 function Card({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: Handlers }) {
@@ -122,11 +129,36 @@ export function Transcript({ items, debug = false, announce, on = {}, virtualize
 
   const live = <div className="sr-only" aria-live="polite">{announce}</div>; // once per finished block, never per token (PLAN.md §9.3)
 
+  // Alt+↑ / Alt+↓: jump between the cards that are waiting for the user (PLAN.md §9.2). The target may be scrolled out of
+  // the virtualized list, so scroll first and focus once it exists.
+  const waiting = useMemo(() => waitingIndexes(items), [items]);
+  const at = useRef(-1);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || !waiting.length) return;
+      e.preventDefault();
+      const down = e.key === 'ArrowDown';
+      at.current = down ? Math.min(at.current + 1, waiting.length - 1) : at.current < 0 ? waiting.length - 1 : Math.max(at.current - 1, 0);
+      const index = waiting[at.current]!;
+      list.current?.scrollToIndex({ index, align: 'center' });
+      const focus = () => {
+        const card = root.current?.querySelector(`[data-item-index="${index}"]`);
+        const target = card?.querySelector<HTMLElement>('[role="alert"][tabindex], [role="alert"] input, [role="alert"] button');
+        target?.focus();
+        card?.scrollIntoView({ block: 'center' });
+      };
+      setTimeout(focus, virtualize ? 120 : 0);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [waiting, virtualize]);
+
   if (!virtualize) {
     return (
-      <div role="log" aria-label={strings.transcript.region} aria-live="off" tabIndex={0} className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={root} role="log" aria-label={strings.transcript.region} aria-live="off" tabIndex={0} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[780px] flex-col gap-3 px-4 py-4">
-          {items.map((item) => <Card key={keyOf(item)} item={item} debug={debug} on={on} />)}
+          {items.map((item, i) => <div key={keyOf(item)} data-item-index={i}><Card item={item} debug={debug} on={on} /></div>)}
         </div>
         {live}
       </div>
@@ -134,7 +166,7 @@ export function Transcript({ items, debug = false, announce, on = {}, virtualize
   }
 
   return (
-    <div role="log" aria-label={strings.transcript.region} aria-live="off" className="relative min-h-0 flex-1">
+    <div ref={root} role="log" aria-label={strings.transcript.region} aria-live="off" className="relative min-h-0 flex-1">
       <Virtuoso
         ref={list}
         className="h-full"
@@ -144,8 +176,8 @@ export function Transcript({ items, debug = false, announce, on = {}, virtualize
         followOutput={(bottom) => (bottom ? 'auto' : false)}
         atBottomStateChange={(b) => { setAtBottom(b); if (b) setUnseen(0); }}
         increaseViewportBy={300}
-        itemContent={(_, item) => (
-          <div className="mx-auto w-full max-w-[780px] px-4 py-1.5">
+        itemContent={(i, item) => (
+          <div data-item-index={i} className="mx-auto w-full max-w-[780px] px-4 py-1.5">
             <Card item={item} debug={debug} on={on} />
           </div>
         )}

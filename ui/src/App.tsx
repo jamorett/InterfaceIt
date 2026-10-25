@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { SessionScreen } from './SessionScreen.tsx';
+import { askNotificationPermissionOnce } from './state/notify.ts';
 import { readToken } from './state/token.ts';
 import { useStore } from './state/store.ts';
 import { NoLink } from './states/NoLink.tsx';
@@ -31,6 +32,7 @@ export function App() {
   const running = useMemo(() => past.filter((p) => p.live && !views[p.id]).map((p) => ({ id: p.id, title: p.title, cwd: p.cwd })), [past, views]);
   useTabTitle();
 
+  useEffect(() => askNotificationPermissionOnce(), []);
   useEffect(() => {
     const token = readToken();
     if (!token) useStore.setState({ conn: 'no-link' });
@@ -51,5 +53,5 @@ export function App() {
       </div>
     );
   }
-  return <div className="h-dvh"><SessionScreen view={view} /></div>;
+  return <div className="h-dvh"><SessionScreen key={view.id} view={view} /></div>;
 }

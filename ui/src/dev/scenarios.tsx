@@ -4,6 +4,8 @@ import { Button } from '../components/Button.tsx';
 import { Composer } from '../composer/Composer.tsx';
 import type { PermissionMode, SessionState, TodoItem, TranscriptItem } from '../model.ts';
 import { AppShell } from '../shell/AppShell.tsx';
+import { InspectorBody } from '../shell/InspectorBody.tsx';
+import { InspectorContext, type InspectorContent } from '../shell/inspector.ts';
 import { LanesStrip } from '../shell/LanesStrip.tsx';
 import { TodoStrip } from '../shell/TodoStrip.tsx';
 import { CrashedSession } from '../states/CrashedSession.tsx';
@@ -53,21 +55,18 @@ function Live({ items, debug }: { items: TranscriptItem[]; debug?: boolean }) {
 }
 
 function Session(p: SessionProps) {
+  // the side panel works as in the app: cards open it through the context, and the "inspector" scenario starts with a change already open
+  const [panel, setPanel] = useState<InspectorContent | undefined>(() => (p.inspectorOpen ? { kind: 'diff', title: 'Edit ui/src/store.ts', path: 'ui/src/store.ts', lines: fx.diffForInspector } : undefined));
+  const [signal, setSignal] = useState(0);
   return (
+    <InspectorContext.Provider value={(c) => { setPanel(c); setSignal((n) => n + 1); }}>
     <AppShell
       sessions={fx.sessions}
       activeId="s1"
       inspectorOpen={p.inspectorOpen}
-      inspectorTitle="Edit ui/src/store.ts"
-      inspector={
-        <pre tabIndex={0} aria-label="Full change" className="overflow-auto rounded-control bg-well p-2 font-mono text-sm leading-snug">
-          {fx.diffForInspector.map((l, i) => (
-            <span key={i} className={`block whitespace-pre ${l.kind === 'add' ? 'bg-accent/15' : l.kind === 'del' ? 'bg-danger/15' : ''}`}>
-              {l.kind === 'add' ? '+ ' : l.kind === 'del' ? '− ' : '  '}{l.text}
-            </span>
-          ))}
-        </pre>
-      }
+      inspectorTitle={panel?.title}
+      inspector={panel ? <InspectorBody content={panel} /> : undefined}
+      openInspectorSignal={signal}
       header={{
         project: 'ClaudeInterface',
         branch: 'main',
@@ -93,6 +92,7 @@ function Session(p: SessionProps) {
     >
       {p.main ?? <Live items={p.items ?? fx.baseTranscript} debug={p.debug} />}
     </AppShell>
+    </InspectorContext.Provider>
   );
 }
 
@@ -139,6 +139,7 @@ export const scenarios: Record<ScenarioName, () => ReactNode> = {
   hostile: () => <Session state="idle" items={fx.hostileTranscript} debug />,
   'tool-failed': () => <Session state="error" items={fx.failedTranscript} />,
   bypass: () => <Session state="running" mode="bypassPermissions" items={fx.runningTranscript} />,
+  'tools-rich': () => <Session state="idle" items={fx.richToolsTranscript} />,
   inspector: () => <Session state="awaiting_permission" items={fx.permissionTranscript} inspectorOpen />,
 };
 

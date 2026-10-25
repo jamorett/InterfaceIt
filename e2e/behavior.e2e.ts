@@ -194,3 +194,55 @@ test.describe('theme', () => {
     await expect(page.locator('html')).not.toHaveAttribute('data-theme', /.+/);
   });
 });
+
+test.describe('tool cards', () => {
+  test('an Edit shows only what changed, and "open in side panel" shows the whole change with counts', async ({ page }) => {
+    await open(page, 'tools-rich');
+    await page.getByRole('button', { name: /^Edit ui\/src\/store\.ts/ }).click();
+    const preview = page.getByLabel('Change preview');
+    await expect(preview).toContainText('removed:');
+    await expect(preview).toContainText('added:');
+    await page.getByRole('button', { name: 'Open in side panel' }).nth(1).click(); // Read, Edit, Write… the second is the Edit
+    const panel = page.getByRole('complementary', { name: /Edit ui\/src\/store\.ts/ });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText('+2')).toBeVisible();
+    await expect(panel.getByText('−1')).toBeVisible();
+  });
+
+  test('a Read is shown as code, without its line numbers in the text, and gets syntax colours', async ({ page }) => {
+    await open(page, 'tools-rich');
+    await page.getByRole('button', { name: /^Read .*store\.ts/ }).click();
+    const code = page.getByLabel('ts code').first(); // the card's body; the fixture's last answer also holds a ts block
+    await expect(code).toContainText('export const store');
+    await expect(code).not.toContainText('→');
+    await expect(code.locator('span[style*="--shiki"]').first()).toBeAttached({ timeout: 10_000 }); // the highlighter loads lazily
+  });
+
+  test('terminal output keeps its colours as design tokens, shows progress bars once, and never shows escape codes', async ({ page }) => {
+    await open(page, 'tools-rich');
+    const out = page.getByLabel('Bash output'); // a failed command is open by default
+    await expect(out).toContainText('api.test.ts');
+    await expect(out.locator('.text-danger')).toContainText('✗ api.test.ts');
+    await expect(out.locator('.text-caution')).toContainText('warning');
+    await expect(out).toContainText('Progress 100%');
+    await expect(out).not.toContainText('Progress 10%');
+    await expect(out).not.toContainText('[31m');
+  });
+
+  test('a picture a tool returned is shown and opens large in the side panel', async ({ page }) => {
+    await open(page, 'tools-rich');
+    await page.getByRole('button', { name: /^Read diagram\.png/ }).click();
+    const img = page.getByRole('img', { name: 'Image from the tool' }).first();
+    await expect(img).toBeVisible();
+    expect(await img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1);
+    await img.click();
+    await expect(page.getByRole('complementary', { name: 'Image from the tool' })).toBeVisible();
+  });
+
+  test('a cut output says so and offers the rest', async ({ page }) => {
+    await open(page, 'tools-rich');
+    await page.getByRole('button', { name: /^Bash cat huge\.log/ }).click();
+    await expect(page.getByText(/Output cut at the first 64 KB/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Show full output' })).toBeVisible();
+  });
+});

@@ -42,6 +42,24 @@ describe.each([['light', light], ['dark', darkManual]] as const)('%s theme', (_n
   });
 });
 
+describe('code colours', () => {
+  const shiki = Object.fromEntries([...css.matchAll(/(--shiki-[\w-]+)\s*:\s*var\((--[\w-]+)\)\s*;/g)].map((m) => [m[1]!, m[2]!]));
+  const readableOnCode = pairs.filter(([, bgs]) => bgs.includes('--surface-sunken')).map(([fg]) => fg);
+
+  it('defines the colours Shiki asks for', () => {
+    for (const v of ['foreground', 'background', 'token-keyword', 'token-string', 'token-constant', 'token-comment', 'token-function', 'token-parameter', 'token-punctuation', 'token-link', 'token-string-expression']) {
+      expect(shiki[`--shiki-${v}`], v).toBeTruthy();
+    }
+  });
+  it('uses only tokens that reach AA on the code background, in light and dark', () => {
+    for (const [name, token] of Object.entries(shiki)) {
+      if (name === '--shiki-background') continue;
+      expect(readableOnCode, `${name} → ${token}`).toContain(token);
+    }
+    expect(shiki['--shiki-background']).toBe('--surface-sunken');
+  });
+});
+
 describe('palette', () => {
   it('uses the four given colours for their roles', () => {
     expect(light['--bg']).toBe('#FAF8F1');

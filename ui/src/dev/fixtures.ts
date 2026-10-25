@@ -178,3 +178,31 @@ export const failedTranscript: TranscriptItem[] = [
 ];
 
 export const diffForInspector = permissionEdit.diff!;
+
+const ESC = String.fromCharCode(27);
+const colour = (code: number, text: string) => `${ESC}[${code}m${text}${ESC}[0m`;
+const PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/** Every way a tool card can show its work: a change, a file read as code, coloured terminal output, a picture, a cut output. */
+export const richToolsTranscript: TranscriptItem[] = [
+  user,
+  { kind: 'tool', tool: { id: 'r1', name: 'Read', target: 'C:\\Users\\someone\\Desktop\\ClaudeInterface\\ui\\src\\store.ts', status: 'ok', elapsedSec: 0.3, output: '     1→export const store = create(() => ({\n     2→  items: [] as Item[],\n     3→  version: 2,\n     4→}));\n' } },
+  {
+    kind: 'tool',
+    tool: {
+      id: 'r2', name: 'Edit', target: 'ui/src/store.ts', status: 'ok', elapsedSec: 0.2, output: 'The file ui/src/store.ts has been updated.',
+      input: { file_path: 'ui/src/store.ts', old_string: 'export const store = create(() => ({\n  items: [],\n}));', new_string: 'export const store = create(() => ({\n  items: [] as Item[],\n  version: 2,\n}));' },
+    },
+  },
+  {
+    kind: 'tool',
+    tool: { id: 'r3', name: 'Write', target: 'notes.md', status: 'ok', output: 'File created successfully at: notes.md', input: { file_path: 'notes.md', content: Array.from({ length: 60 }, (_, i) => `line ${i + 1}`).join('\n') } },
+  },
+  {
+    kind: 'tool',
+    tool: { id: 'r4', name: 'Bash', target: 'npm test', status: 'error', elapsedSec: 12, output: `${colour(32, '✓')} store.test.ts (3 tests)\n${colour(31, '✗ api.test.ts')} 1 failed\n${ESC}[1;33mwarning${ESC}[0m: slow test\nProgress 10%\rProgress 60%\rProgress 100%\n` },
+  },
+  { kind: 'tool', tool: { id: 'r5', name: 'Read', target: 'diagram.png', status: 'ok', output: '', images: [{ mediaType: 'image/png', data: PIXEL }] } },
+  { kind: 'tool', tool: { id: 'r6', name: 'Bash', target: 'cat huge.log', status: 'ok', output: 'log line\n'.repeat(40), truncatedBytes: 4_300_000 } },
+  { kind: 'assistant', id: 'r7', text: 'Here is a snippet:\n\n```ts\nconst answer: number = 42; // the answer\n```' },
+];

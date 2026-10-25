@@ -1,10 +1,12 @@
 import { create } from 'zustand';
-import type { Preflight, SessionEvent, SessionInfo, UiEvent } from '@ci/shared';
+import type { Preflight, SessionEvent, SessionInfo, SessionState, UiEvent } from '@ci/shared';
 import type { Command } from '@ci/shared/commands';
 import type { PermissionDecision, PlanView } from '../model.ts';
 import { createAnimationGate } from '../motion.ts';
 import { createConnection, type ConnStatus } from './connection.ts';
-import { initialView, recordAnswer, reduce, type SessionView } from './reduce.ts';
+import { basename } from './describe.ts';
+import { notificationFor, showNotification, windowIsAway } from './notify.ts';
+import { applyFull, initialView, recordAnswer, reduce, type SessionView } from './reduce.ts';
 
 const gate = createAnimationGate();
 let connection: ReturnType<typeof createConnection> | undefined;
@@ -59,8 +61,9 @@ export type Store = {
   prompt(text: string): void;
   stop(): void;
   unqueue(id: string): void;
-  decide(reqId: string, d: PermissionDecision, reason?: string): void;
+  decide(reqId: string, d: PermissionDecision, reason?: string, edited?: Record<string, string>): void;
   answer(viewId: string, labels: string[]): void;
+  fetchFull(toolId: string): void;
   decidePlan(reqId: string, d: NonNullable<PlanView['decision']>, feedback?: string): void;
   setMode(mode: Extract<Command, { type: 'set_mode' }>['mode']): void;
   setModel(model: string): void;
@@ -97,6 +100,8 @@ export const useStore = create<Store>()((set, get) => {
 
     apply(batch) {
       const reattach: string[] = [];
+      const before: Record<string, SessionState | undefined> = {};
+      for (const e of batch) if (isSessionEvent(e) && !(e.sessionId in before)) before[e.sessionId] = get().views[e.sessionId]?.state;
       set((s) => {
         const next = { views: s.views, order: s.order, activeId: s.activeId, past: s.past, preflight: s.preflight, trusting: s.trusting, starting: s.starting, notice: s.notice };
         for (const e of batch) {
@@ -109,6 +114,11 @@ export const useStore = create<Store>()((set, get) => {
           }
           switch (e.type) {
             case 'preflight': next.preflight = e.preflight; break;
+            case 'tool_full': {
+              const v = next.views[e.sessionId];
+              if (v) next.views = { ...next.views, [e.sessionId]: applyFull(v, e.toolId, e.text) };
+              break;
+            }
             case 'session_list':
               next.past = e.sessions;
               // sessions this tab had open before a reload are still running in the bridge: take them back with their full history
@@ -143,6 +153,15 @@ export const useStore = create<Store>()((set, get) => {
       });
       for (const id of reattach) get().send({ type: 'replay_from', sessionId: id, seq: 0 });
       saveOpen(get().order);
+      // a pop-up only when the window is out of sight, and never for history being replayed
+      if (windowIsAway()) {
+        for (const [id, prev] of Object.entries(before)) {
+          const view = get().views[id];
+          if (!view || batch.some((e) => isSessionEvent(e) && e.sessionId === id && e.replayed)) continue;
+          const note = notificationFor(prev, view.state, basename(view.cwd) || 'ClaudeInterface');
+          if (note) showNotification(note, id);
+        }
+      }
     },
 
     checkAgain: () => get().send({ type: 'preflight' }),
@@ -184,11 +203,11 @@ export const useStore = create<Store>()((set, get) => {
     prompt: (text) => sendTo((sessionId) => ({ type: 'prompt', sessionId, text })),
     stop: () => sendTo((sessionId) => ({ type: 'interrupt', sessionId })),
     unqueue: (promptId) => sendTo((sessionId) => ({ type: 'unqueue', sessionId, promptId })),
-    decide(reqId, d, reason) {
+    decide(reqId, d, reason, edited) {
       sendTo((sessionId) =>
         d === 'denied' || d === 'cancelled'
           ? { type: 'permission_reply', sessionId, reqId, decision: 'deny', reason }
-          : { type: 'permission_reply', sessionId, reqId, decision: 'allow', scope: ({ 'allowed-once': 'once', 'allowed-session': 'session', 'allowed-local': 'local', 'allowed-project': 'project', 'allowed-user': 'user' } as const)[d] },
+          : { type: 'permission_reply', sessionId, reqId, decision: 'allow', editedInput: edited, scope: ({ 'allowed-once': 'once', 'allowed-session': 'session', 'allowed-local': 'local', 'allowed-project': 'project', 'allowed-user': 'user' } as const)[d] },
       );
     },
     answer(viewId, labels) {
@@ -199,6 +218,7 @@ export const useStore = create<Store>()((set, get) => {
       set((s) => ({ views: { ...s.views, [id]: r.view } }));
       if (r.complete) get().send({ type: 'answer', sessionId: id, reqId: r.complete.reqId, answers: r.complete.answers });
     },
+    fetchFull: (toolId) => sendTo((sessionId) => ({ type: 'fetch_full', sessionId, toolId })),
     decidePlan(reqId, d, feedback) {
       sendTo((sessionId) => ({ type: 'plan_reply', sessionId, reqId, decision: d === 'approved-auto' ? 'approve_auto' : d === 'approved-manual' ? 'approve_manual' : 'reject', feedback }));
     },

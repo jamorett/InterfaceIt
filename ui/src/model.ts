@@ -16,10 +16,15 @@ export type ToolView = Instant & {
   elapsedSec?: number;
   output?: string;
   truncatedBytes?: number;
+  /** what the tool was asked to do (Edit's old and new text, Write's content): the side panel shows its diff */
+  input?: unknown;
+  images?: { mediaType: string; data: string }[];
+  /** the whole output has been fetched, after it was cut for the wire */
+  full?: boolean;
   depth?: number;
 };
 
-export type DiffLine = { kind: 'add' | 'del' | 'ctx'; text: string };
+export type DiffLine = { kind: 'add' | 'del' | 'ctx'; text: string; oldNo?: number; newNo?: number; /** a "… N unchanged lines" marker, not a line of the text */ fold?: boolean };
 
 export type PermissionDecision = 'allowed-once' | 'allowed-session' | 'allowed-local' | 'allowed-project' | 'allowed-user' | 'denied' | 'cancelled';
 
@@ -34,6 +39,8 @@ export type PermissionView = Instant & {
   requiresUserInteraction?: boolean;
   /** false when the CLI offered nothing to remember: "Allow for…" is hidden */
   canRemember?: boolean;
+  /** a field the user may change before allowing (the command of a Bash call) */
+  editable?: { key: string; value: string };
   decision?: PermissionDecision;
   denyReason?: string;
 };

@@ -127,7 +127,7 @@ export function reduce(view: SessionView, e: SessionEvent, instant: boolean): Se
       const i = toolIndex(v.items, e.id);
       const it = v.items[i];
       const todos = it?.kind === 'tool' ? todosFrom(it.tool.name, e.input, v.todos) : v.todos;
-      return it?.kind === 'tool' ? { ...v, todos, items: replaceAt(v.items, i, { kind: 'tool', tool: { ...it.tool, target: describeTool(it.tool.name, e.input) } }) } : v;
+      return it?.kind === 'tool' ? { ...v, todos, items: replaceAt(v.items, i, { kind: 'tool', tool: { ...it.tool, target: describeTool(it.tool.name, e.input), input: e.input } }) } : v;
     }
     case 'tool_progress': {
       const i = toolIndex(v.items, e.id);
@@ -139,7 +139,7 @@ export function reduce(view: SessionView, e: SessionEvent, instant: boolean): Se
       const it = v.items[i];
       if (it?.kind !== 'tool') return v;
       const elapsedSec = (e.ts - (v.starts[e.id] ?? e.ts)) / 1000;
-      return { ...v, items: replaceAt(v.items, i, { kind: 'tool', tool: { ...it.tool, status: e.isError ? 'error' : 'ok', output: e.result.text, truncatedBytes: e.result.truncated ? e.result.bytes : undefined, elapsedSec: it.tool.elapsedSec ?? elapsedSec } }) };
+      return { ...v, items: replaceAt(v.items, i, { kind: 'tool', tool: { ...it.tool, status: e.isError ? 'error' : 'ok', output: e.result.text, images: e.result.imageData, truncatedBytes: e.result.truncated ? e.result.bytes : undefined, elapsedSec: it.tool.elapsedSec ?? elapsedSec } }) };
     }
 
     case 'permission_request': {
@@ -148,7 +148,8 @@ export function reduce(view: SessionView, e: SessionEvent, instant: boolean): Se
         kind: 'permission',
         view: {
           id: e.reqId, title: `${e.displayName ?? e.tool}: ${middleTruncate(target, 90)}`, target, description: e.reason ?? (e.description && e.description !== target ? e.description : undefined),
-          agent: e.agentId, diff: diffFor(e.tool, e.input), requiresUserInteraction: e.requiresUserInteraction, canRemember: e.canRemember, ...flag,
+          agent: e.agentId, diff: diffFor(e.tool, e.input), requiresUserInteraction: e.requiresUserInteraction, canRemember: e.canRemember,
+          editable: (e.tool === 'Bash' || e.tool === 'PowerShell') && typeof e.input.command === 'string' ? { key: 'command', value: e.input.command } : undefined, ...flag,
         },
       });
     }
@@ -219,4 +220,11 @@ export function recordAnswer(view: SessionView, viewId: string, labels: string[]
   };
   const done = ask.questions.every((q) => answers[q.question]?.length);
   return done ? { view: next, complete: { reqId, answers: Object.fromEntries(ask.questions.map((q) => [q.question, answers[q.question]!.join(', ')])) } } : { view: next };
+}
+
+/** The whole output of a tool has arrived (it was cut for the wire): replace the cut text. */
+export function applyFull(view: SessionView, toolId: string, text: string): SessionView {
+  const i = toolIndex(view.items, toolId);
+  const it = view.items[i];
+  return it?.kind === 'tool' ? { ...view, items: replaceAt(view.items, i, { kind: 'tool', tool: { ...it.tool, output: text, truncatedBytes: undefined, full: true } }) } : view;
 }

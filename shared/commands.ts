@@ -28,6 +28,8 @@ export const commandSchema = z.discriminatedUnion('type', [
 
   z.object({ type: z.literal('prompt'), sessionId: id, text: z.string().min(1).max(200_000) }),
   z.object({ type: z.literal('unqueue'), sessionId: id, promptId: id }),
+  /** the whole output of a tool whose result was cut for the wire */
+  z.object({ type: z.literal('fetch_full'), sessionId: id, toolId: id }),
   z.object({ type: z.literal('interrupt'), sessionId: id }),
 
   z.object({

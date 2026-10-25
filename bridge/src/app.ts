@@ -82,6 +82,11 @@ export function createApp(deps: Deps) {
           case 'replay_from': return attach(cmd.sessionId, cmd.seq);
           case 'prompt': return session(cmd.sessionId)?.prompt(cmd.text);
           case 'unqueue': return session(cmd.sessionId)?.unqueue(cmd.promptId);
+          case 'fetch_full': {
+            const text = session(cmd.sessionId)?.log.fullResult(cmd.toolId);
+            if (text !== undefined) send({ type: 'tool_full', sessionId: cmd.sessionId, toolId: cmd.toolId, text });
+            return;
+          }
           case 'interrupt': return session(cmd.sessionId)?.interrupt();
           case 'permission_reply': return session(cmd.sessionId)?.permissionReply(cmd.reqId, cmd.decision, cmd.scope, cmd.reason, cmd.editedInput);
           case 'answer': return session(cmd.sessionId)?.answer(cmd.reqId, cmd.answers);

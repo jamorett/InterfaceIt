@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Banner } from './components/Banner.tsx';
 import { Button } from './components/Button.tsx';
@@ -5,9 +6,12 @@ import { Composer } from './composer/Composer.tsx';
 import { ago, resetsAt } from './format.ts';
 import type { LimitWindow, SessionSummary } from './model.ts';
 import { AppShell } from './shell/AppShell.tsx';
+import { InspectorBody } from './shell/InspectorBody.tsx';
+import { InspectorContext, type InspectorContent } from './shell/inspector.ts';
 import { LanesStrip } from './shell/LanesStrip.tsx';
 import { TodoStrip } from './shell/TodoStrip.tsx';
 import { basename } from './state/describe.ts';
+import { nextMode } from './state/modes.ts';
 import { lanesOf, type SessionView } from './state/reduce.ts';
 import { useStore } from './state/store.ts';
 import { CrashedSession } from './states/CrashedSession.tsx';
@@ -25,6 +29,10 @@ const DEFAULT_MODELS = [{ value: 'default', label: 'Default' }];
 export function SessionScreen({ view }: { view: SessionView }) {
   const { conn, attempt, past, views, order, dismissedLimit, debug } = useStore(useShallow((s) => ({ conn: s.conn, attempt: s.attempt, past: s.past, views: s.views, order: s.order, dismissedLimit: s.dismissedLimit, debug: s.debug })));
   const act = useStore.getState();
+  // cards open this panel (a diff, a whole output, an image) through InspectorContext
+  const [panel, setPanel] = useState<InspectorContent>();
+  const [panelSignal, setPanelSignal] = useState(0);
+  const openPanel = (c: InspectorContent) => { setPanel(c); setPanelSignal((n) => n + 1); };
 
   const live: SessionSummary[] = order.flatMap((id) => (views[id] ? [{ id, project: basename(views[id]!.cwd), title: titleOf(views[id]!), state: views[id]!.state, updated: 'now' }] : []));
   const liveIds = new Set(order.flatMap((id) => [id, views[id]?.init?.sdkSessionId]));
@@ -49,11 +57,17 @@ export function SessionScreen({ view }: { view: SessionView }) {
   };
 
   return (
+    <InspectorContext.Provider value={openPanel}>
     <AppShell
+      inspector={panel ? <InspectorBody content={panel} /> : undefined}
+      inspectorTitle={panel?.title}
+      openInspectorSignal={panelSignal}
       sessions={[...live, ...stored]}
       activeId={view.id}
       onSelectSession={select}
       onNewSession={act.newSession}
+      onEscape={() => { if (['running', 'awaiting_permission', 'awaiting_answer', 'compacting', 'retrying'].includes(view.state)) act.stop(); }}
+      onCycleMode={() => act.setMode(nextMode(view.mode))}
       header={{
         project: basename(view.cwd) || view.cwd,
         state: view.state,
@@ -99,8 +113,9 @@ export function SessionScreen({ view }: { view: SessionView }) {
       ) : q ? (
         <EmptySession onPick={act.prompt} />
       ) : (
-        <Transcript key={view.id} items={view.items} debug={debug} announce={view.announce} on={{ onPermission: act.decide, onAnswer: act.answer, onPlan: act.decidePlan }} />
+        <Transcript key={view.id} items={view.items} debug={debug} announce={view.announce} on={{ onPermission: act.decide, onAnswer: act.answer, onPlan: act.decidePlan, onFull: act.fetchFull }} />
       )}
     </AppShell>
+    </InspectorContext.Provider>
   );
 }

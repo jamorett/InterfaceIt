@@ -118,6 +118,21 @@
   }
 }
 
+/* Code colours: Shiki reads these. Every one points at a token that theme.test.ts proves readable on --surface-sunken. */
+:root {
+  --shiki-foreground: var(--text);
+  --shiki-background: var(--surface-sunken);
+  --shiki-token-keyword: var(--primary);
+  --shiki-token-string: var(--warning);
+  --shiki-token-string-expression: var(--warning);
+  --shiki-token-constant: var(--danger);
+  --shiki-token-comment: var(--text-muted);
+  --shiki-token-punctuation: var(--text-muted);
+  --shiki-token-function: var(--text);
+  --shiki-token-parameter: var(--text);
+  --shiki-token-link: var(--primary);
+}
+
 html {
   background: var(--bg);
   color: var(--text);

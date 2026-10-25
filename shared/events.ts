@@ -11,9 +11,13 @@ export type SessionState =
 
 export type AuthMode = 'subscription' | 'apikey' | 'other';
 
+export type ImageData = { mediaType: string; data: string };
+
 export type ToolResult = {
   text: string;
   images: number;
+  /** the first few images themselves (base64), when small enough to send */
+  imageData?: ImageData[];
   /** set by the event log when the text was cut for the wire; `bytes` is the original size */
   truncated?: boolean;
   bytes?: number;
@@ -104,6 +108,7 @@ export type ServerEvent =
   | { type: 'preflight'; preflight: Preflight }
   | { type: 'session_list'; sessions: SessionInfo[] }
   | { type: 'session_opened'; sessionId: string; cwd: string; resumed: boolean }
+  | { type: 'tool_full'; sessionId: string; toolId: string; text: string }
   | { type: 'server_error'; code: 'untrusted_folder' | 'bad_command' | 'unknown_session' | 'start_failed' | 'not_a_folder'; message: string; detail?: string };
 
 export type UiEvent = ServerEvent | SessionEvent;

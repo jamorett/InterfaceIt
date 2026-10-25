@@ -168,7 +168,8 @@ export abstract class SessionCore implements SessionLike {
       this.settle(reqId, { behavior: 'deny', message: reason ? `The user denied this action: ${reason}` : 'The user denied this action.' }, 'deny', { reason });
     } else {
       const updatedPermissions = scope === 'once' ? undefined : permissionUpdates(p.tool, p.suggestions, scope);
-      this.settle(reqId, { behavior: 'allow', updatedInput: editedInput ?? p.input, updatedPermissions }, 'allow', { scope });
+      // the UI sends only the fields the user changed (the command of a Bash call); the rest of the input stays as Claude wrote it
+      this.settle(reqId, { behavior: 'allow', updatedInput: editedInput ? { ...p.input, ...editedInput } : p.input, updatedPermissions }, 'allow', { scope });
     }
   }
 

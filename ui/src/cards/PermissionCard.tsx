@@ -1,23 +1,27 @@
 import { Check, Diamond, X } from 'lucide-react';
 import { useState, type KeyboardEvent } from 'react';
 import { Button } from '../components/Button.tsx';
+import { DiffView } from '../components/DiffView.tsx';
 import type { PermissionDecision, PermissionView } from '../model.ts';
 import { strings } from '../strings.ts';
 
 type ScopeDecision = Exclude<PermissionDecision, 'allowed-once' | 'denied' | 'cancelled'>;
 const scopes: ScopeDecision[] = ['allowed-session', 'allowed-local', 'allowed-project', 'allowed-user'];
 
-export function PermissionCard({ view, onDecide }: { view: PermissionView; onDecide?: (d: PermissionDecision, reason?: string) => void }) {
+export function PermissionCard({ view, onDecide }: { view: PermissionView; onDecide?: (d: PermissionDecision, reason?: string, edited?: Record<string, string>) => void }) {
   const [scopeOpen, setScopeOpen] = useState(false);
   const [denyOpen, setDenyOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [reason, setReason] = useState('');
+  const [edited, setEdited] = useState(view.editable?.value ?? '');
   const decided = view.decision;
   const canRemember = !view.requiresUserInteraction && view.canRemember !== false;
 
-  const decide = (d: PermissionDecision, r?: string) => {
+  const decide = (d: PermissionDecision, r?: string, changed?: Record<string, string>) => {
     setScopeOpen(false);
     setDenyOpen(false);
-    onDecide?.(d, r);
+    setEditOpen(false);
+    onDecide?.(d, r, changed);
   };
 
   // Y / N / A work while the card has focus and never while typing a reason (PLAN.md §9.2).
@@ -59,16 +63,7 @@ export function PermissionCard({ view, onDecide }: { view: PermissionView; onDec
       <p className="mt-1 text-md font-semibold [overflow-wrap:anywhere]">{view.title}</p>
       {view.description && <p className="text-base [overflow-wrap:anywhere]">{view.description}</p>}
 
-      {view.diff && (
-        <pre tabIndex={0} aria-label="Change preview" className="mt-2 max-h-48 overflow-auto rounded-control bg-card p-2 font-mono text-sm leading-snug text-ink">
-          {view.diff.map((l, i) => (
-            <span key={i} className={`block whitespace-pre ${l.kind === 'add' ? 'bg-accent/15' : l.kind === 'del' ? 'bg-danger/15' : ''}`}>
-              {l.kind === 'add' ? '+ ' : l.kind === 'del' ? '− ' : '  '}
-              {l.text}
-            </span>
-          ))}
-        </pre>
-      )}
+      {view.diff && <DiffView lines={view.diff} label={strings.diff.preview} className="mt-2 max-h-48 bg-card" />}
 
       <div className="mt-3 flex flex-wrap gap-2">
         <Button variant="primary" onClick={() => decide('allowed-once')}>{strings.permission.allow}</Button>
@@ -77,10 +72,26 @@ export function PermissionCard({ view, onDecide }: { view: PermissionView; onDec
             {strings.permission.allowFor}
           </Button>
         )}
-        <Button variant="attention" aria-expanded={denyOpen} onClick={() => { setDenyOpen((o) => !o); setScopeOpen(false); }}>
+        {view.editable && (
+          <Button variant="attention" aria-expanded={editOpen} onClick={() => { setEditOpen((o) => !o); setScopeOpen(false); setDenyOpen(false); }}>
+            {strings.edit.button}
+          </Button>
+        )}
+        <Button variant="attention" aria-expanded={denyOpen} onClick={() => { setDenyOpen((o) => !o); setScopeOpen(false); setEditOpen(false); }}>
           {strings.permission.deny}
         </Button>
       </div>
+
+      {editOpen && view.editable && (
+        <form className="mt-2 grid gap-2" onSubmit={(e) => { e.preventDefault(); decide('allowed-once', undefined, { [view.editable!.key]: edited }); }}>
+          <label className="text-sm" htmlFor={`edit-${view.id}`}>{strings.edit.label}</label>
+          <textarea id={`edit-${view.id}`} value={edited} onChange={(e) => setEdited(e.target.value)} rows={3} className="w-full resize-y rounded-control border border-on-attention/45 bg-card p-2 font-mono text-sm text-ink" />
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" variant="primary" disabled={!edited.trim()}>{strings.edit.allowEdited}</Button>
+            <Button onClick={() => { setEditOpen(false); setEdited(view.editable!.value); }} variant="attention">{strings.edit.cancel}</Button>
+          </div>
+        </form>
+      )}
 
       {scopeOpen && (
         <ul className="mt-2 grid gap-1 @md:grid-cols-2" aria-label={strings.permission.allowFor}>

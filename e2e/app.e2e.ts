@@ -258,3 +258,27 @@ test.describe('the live app is accessible and responsive', () => {
     await idle(page.locator('body').page());
   });
 });
+
+test.describe('what a change looks like in a live session', () => {
+  test('an allowed Edit leaves a card with the change in it', async ({ page }) => {
+    await start(page);
+    await say(page, '[[edit]] change hello');
+    await page.getByRole('alert', { name: /Needs your OK: Edit/ }).getByRole('button', { name: 'Allow', exact: true }).click();
+    await idle(page);
+    await page.getByRole('button', { name: /^Edit .*hello\.txt/ }).click();
+    const change = page.getByLabel('Change preview').last();
+    await expect(change).toContainText('hello');
+    await expect(change).toContainText('goodbye');
+    await page.getByRole('button', { name: 'Open in side panel' }).last().click();
+    await expect(page.getByRole('complementary', { name: /Edit .*hello\.txt/ })).toBeVisible();
+  });
+
+  test('a Read shows the file as code', async ({ page }) => {
+    await start(page);
+    await say(page, '[[edit]] go');
+    await page.getByRole('alert', { name: /Needs your OK: Edit/ }).getByRole('button', { name: 'Allow', exact: true }).click();
+    await idle(page);
+    await page.getByRole('button', { name: /^Read .*hello\.txt/ }).click();
+    await expect(page.getByLabel('Code').first()).toContainText('hello world');
+  });
+});

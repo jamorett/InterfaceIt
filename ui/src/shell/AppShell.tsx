@@ -22,6 +22,12 @@ type Props = {
   inspectorOpen?: boolean;
   onSelectSession?: (id: string) => void;
   onNewSession?: () => void;
+  /** Esc with nothing to close: the session screen uses it to stop a running turn */
+  /** changes whenever something asks the panel to open (a card's "open in side panel") */
+  openInspectorSignal?: number;
+  onEscape?: () => void;
+  /** Ctrl+Shift+M */
+  onCycleMode?: () => void;
   className?: string;
 };
 
@@ -30,7 +36,7 @@ type Props = {
  * desktop ≥1440 sidebar + transcript + docked inspector · laptop ≥1024 icon rail ·
  * tablet ≥720 sidebar is a drawer, inspector a sheet · narrow <720 single column, status folds into the header menu.
  */
-export function AppShell({ sessions, activeId, header, banners, lanes, children, bottom, inspector, inspectorTitle, inspectorOpen = false, onSelectSession, onNewSession, className = 'h-full' }: Props) {
+export function AppShell({ sessions, activeId, header, banners, lanes, children, bottom, inspector, inspectorTitle, inspectorOpen = false, onSelectSession, onNewSession, openInspectorSignal, onEscape, onCycleMode, className = 'h-full' }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const width = useMeasuredWidth(ref);
   const tier = tierFor(width);
@@ -38,6 +44,13 @@ export function AppShell({ sessions, activeId, header, banners, lanes, children,
   const [wide, setWide] = useState<boolean | undefined>(undefined);
   const [inspectorIsOpen, setInspector] = useState(inspectorOpen);
   const [viaKeyboard, setViaKeyboard] = useState(false);
+
+  useEffect(() => {
+    if (openInspectorSignal) {
+      setViaKeyboard(false);
+      setInspector(true);
+    }
+  }, [openInspectorSignal]);
 
   const docked = tier === 'desktop' || tier === 'laptop';
   const sidebarWide = wide ?? tier === 'desktop';
@@ -55,16 +68,24 @@ export function AppShell({ sessions, activeId, header, banners, lanes, children,
         e.preventDefault();
         setViaKeyboard(true);
         setInspector((o) => !o);
-      } else if (e.key === 'Escape' && (drawer || (inspectorIsOpen && !inspectorDocked))) {
-        // closes the topmost sheet first; stopping a running turn is the next Esc (PLAN.md §9.2)
-        setViaKeyboard(true);
-        if (inspectorIsOpen && !inspectorDocked) setInspector(false);
-        else setDrawer(false);
+      } else if (mod && e.shiftKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        onCycleMode?.();
+      } else if (e.key === 'Escape') {
+        // PLAN.md §9.2: the topmost sheet closes first; then a half-typed message loses focus; only then does Esc stop the turn
+        if (drawer || (inspectorIsOpen && !inspectorDocked)) {
+          setViaKeyboard(true);
+          if (inspectorIsOpen && !inspectorDocked) setInspector(false);
+          else setDrawer(false);
+        } else if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) {
+          if (e.target.value) e.target.blur();
+          else onEscape?.();
+        } else onEscape?.();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [docked, tier, drawer, inspectorIsOpen, inspectorDocked]);
+  }, [docked, tier, drawer, inspectorIsOpen, inspectorDocked, onEscape, onCycleMode]);
 
   // clicks are animated, keyboard toggles are not
   const click = (fn: () => void) => () => { setViaKeyboard(false); fn(); };
