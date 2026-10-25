@@ -6,7 +6,7 @@ export const PORT = '4318'; // not 4317, so e2e never collides with a bridge the
 // Playwright's own `webServer` starts the command through a shell; on Windows killing that shell orphans the real
 // node process, which then keeps Playwright's pipes open and the run never exits. Spawning node directly avoids it.
 export default async function globalSetup() {
-  const child = spawn(process.execPath, ['--import', 'tsx', 'bridge/src/main.ts', '--dev', '--no-open'], {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'bridge/src/main.ts', '--dev', '--no-open', '--fake'], {
     env: { ...process.env, CLAUDEINTERFACE_PORT: PORT, CLAUDEINTERFACE_TOKEN: TOKEN },
     stdio: 'ignore',
   });

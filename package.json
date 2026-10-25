@@ -16,7 +16,9 @@
     "start": "npm run build && tsx bridge/src/main.ts",
     "test": "vitest run",
     "e2e": "playwright test",
-    "typecheck": "tsc -p shared && tsc -p bridge && tsc -p ui"
+    "typecheck": "tsc -p shared && tsc -p bridge && tsc -p ui",
+    "smoke": "tsx bridge/scripts/smoke.ts",
+    "probe": "tsx bridge/scripts/probe.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

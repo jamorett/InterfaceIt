@@ -3,15 +3,15 @@ import { TOKEN } from './token.ts';
 
 test('the link from the terminal connects and the token leaves the address bar', async ({ page }) => {
   await page.goto(`/#t=${TOKEN}`);
-  await expect(page.getByRole('status')).toHaveText('Connected');
+  await expect(page.getByRole('heading', { name: 'Choose a project' })).toBeVisible();
   expect(page.url()).not.toContain(TOKEN);
 });
 
 test('a reload keeps the session without the hash', async ({ page }) => {
   await page.goto(`/#t=${TOKEN}`);
-  await expect(page.getByRole('status')).toHaveText('Connected');
+  await expect(page.getByRole('heading', { name: 'Choose a project' })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('status')).toHaveText('Connected');
+  await expect(page.getByRole('heading', { name: 'Choose a project' })).toBeVisible();
 });
 
 test('opening the bare address asks for the terminal link', async ({ page }) => {

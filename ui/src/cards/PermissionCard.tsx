@@ -12,6 +12,7 @@ export function PermissionCard({ view, onDecide }: { view: PermissionView; onDec
   const [denyOpen, setDenyOpen] = useState(false);
   const [reason, setReason] = useState('');
   const decided = view.decision;
+  const canRemember = !view.requiresUserInteraction && view.canRemember !== false;
 
   const decide = (d: PermissionDecision, r?: string) => {
     setScopeOpen(false);
@@ -26,7 +27,7 @@ export function PermissionCard({ view, onDecide }: { view: PermissionView; onDec
     const k = e.key.toLowerCase();
     if (k === 'y') decide('allowed-once');
     else if (k === 'n') decide('denied');
-    else if (k === 'a' && !view.requiresUserInteraction) setScopeOpen((o) => !o);
+    else if (k === 'a' && canRemember) setScopeOpen((o) => !o);
   };
 
   if (decided) {
@@ -71,7 +72,7 @@ export function PermissionCard({ view, onDecide }: { view: PermissionView; onDec
 
       <div className="mt-3 flex flex-wrap gap-2">
         <Button variant="primary" onClick={() => decide('allowed-once')}>{strings.permission.allow}</Button>
-        {!view.requiresUserInteraction && (
+        {canRemember && (
           <Button variant="attention" aria-expanded={scopeOpen} onClick={() => { setScopeOpen((o) => !o); setDenyOpen(false); }}>
             {strings.permission.allowFor}
           </Button>
@@ -99,7 +100,7 @@ export function PermissionCard({ view, onDecide }: { view: PermissionView; onDec
         </form>
       )}
 
-      <p className="mt-2 text-sm opacity-90">{view.requiresUserInteraction ? strings.permission.requiresPerson : strings.permission.keys}</p>
+      <p className="mt-2 text-sm opacity-90">{view.requiresUserInteraction ? strings.permission.requiresPerson : canRemember ? strings.permission.keys : strings.permission.keysOnce}</p>
     </section>
   );
 }

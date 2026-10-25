@@ -117,7 +117,7 @@ export function DevTokens() {
           <span className="self-center"><SessionBadge state={session.state} /></span>
         </div>
         <div className="h-[420px] overflow-hidden rounded-card border border-line">
-          <div className="flex h-full flex-col"><Transcript items={session.items} on={{ onPermission: session.decide }} /></div>
+          <div className="flex h-full flex-col"><Transcript virtualize={false} items={session.items} on={{ onPermission: session.decide }} /></div>
         </div>
       </Section>
 

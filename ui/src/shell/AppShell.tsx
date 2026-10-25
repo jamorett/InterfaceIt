@@ -20,6 +20,8 @@ type Props = {
   inspector?: ReactNode;
   inspectorTitle?: string;
   inspectorOpen?: boolean;
+  onSelectSession?: (id: string) => void;
+  onNewSession?: () => void;
   className?: string;
 };
 
@@ -28,7 +30,7 @@ type Props = {
  * desktop ≥1440 sidebar + transcript + docked inspector · laptop ≥1024 icon rail ·
  * tablet ≥720 sidebar is a drawer, inspector a sheet · narrow <720 single column, status folds into the header menu.
  */
-export function AppShell({ sessions, activeId, header, banners, lanes, children, bottom, inspector, inspectorTitle, inspectorOpen = false, className = 'h-full' }: Props) {
+export function AppShell({ sessions, activeId, header, banners, lanes, children, bottom, inspector, inspectorTitle, inspectorOpen = false, onSelectSession, onNewSession, className = 'h-full' }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const width = useMeasuredWidth(ref);
   const tier = tierFor(width);
@@ -71,12 +73,12 @@ export function AppShell({ sessions, activeId, header, banners, lanes, children,
     <TierContext.Provider value={tier}>
       <div ref={ref} className={`@container relative flex flex-col overflow-hidden bg-paper text-ink ${className}`}>
         <div className="flex min-h-0 flex-1">
-          {docked && <Sidebar sessions={sessions} activeId={activeId} variant={sidebarWide ? 'full' : 'rail'} />}
+          {docked && <Sidebar sessions={sessions} activeId={activeId} variant={sidebarWide ? 'full' : 'rail'} onSelect={onSelectSession} onNew={onNewSession} />}
           <div className="flex min-w-0 flex-1 flex-col">
             <Header
               {...header}
               onMenu={click(() => setDrawer(true))}
-              onToggleInspector={click(() => setInspector((o) => !o))}
+              onToggleInspector={inspector ? click(() => setInspector((o) => !o)) : undefined}
               inspectorOpen={inspectorIsOpen}
             />
             {banners}
@@ -86,16 +88,18 @@ export function AppShell({ sessions, activeId, header, banners, lanes, children,
               {bottom}
             </main>
           </div>
-          <Inspector open={inspectorIsOpen} docked={inspectorDocked} instant={viaKeyboard} title={inspectorTitle} onClose={click(() => setInspector(false))}>
-            {inspector}
-          </Inspector>
+          {inspector && (
+            <Inspector open={inspectorIsOpen} docked={inspectorDocked} instant={viaKeyboard} title={inspectorTitle} onClose={click(() => setInspector(false))}>
+              {inspector}
+            </Inspector>
+          )}
         </div>
         {tier !== 'narrow' && (
           <footer className="border-t border-line bg-card px-4 py-1.5">
             <StatusSummary {...header.status} />
           </footer>
         )}
-        {!docked && <Sidebar sessions={sessions} activeId={activeId} variant="drawer" open={drawer} instant={viaKeyboard} onClose={click(() => setDrawer(false))} />}
+        {!docked && <Sidebar sessions={sessions} activeId={activeId} variant="drawer" open={drawer} instant={viaKeyboard} onClose={click(() => setDrawer(false))} onSelect={onSelectSession} onNew={onNewSession} />}
       </div>
     </TierContext.Provider>
   );

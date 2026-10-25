@@ -14,6 +14,8 @@ export type HeaderProps = {
   models: { value: string; label: string }[];
   mode: PermissionMode;
   onMenu?: () => void;
+  onModel?: (value: string) => void;
+  onMode?: (mode: PermissionMode) => void;
   onToggleInspector?: () => void;
   inspectorOpen?: boolean;
   status: StatusProps;
@@ -21,11 +23,11 @@ export type HeaderProps = {
 
 const modes = Object.keys(strings.mode) as PermissionMode[];
 
-function Select({ label, value, children }: { label: string; value: string; children: React.ReactNode }) {
+function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: React.ReactNode }) {
   return (
     <label className="flex items-center gap-1.5 text-sm text-muted">
       {label}
-      <select defaultValue={value} className="min-h-8 rounded-control border border-line bg-card px-2 text-base text-ink pointer-coarse:min-h-11">{children}</select>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="min-h-8 rounded-control border border-line bg-card px-2 text-base text-ink pointer-coarse:min-h-11">{children}</select>
     </label>
   );
 }
@@ -35,10 +37,10 @@ export function Header(p: HeaderProps) {
   const narrow = tier === 'narrow';
   const controls = (
     <>
-      <Select label={strings.header.model} value={p.model}>
-        {p.models.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+      <Select label={strings.header.model} value={p.model} onChange={(v) => p.onModel?.(v)}>
+        {(p.models.some((m) => m.value === p.model) ? p.models : [{ value: p.model, label: p.model }, ...p.models]).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
       </Select>
-      <Select label={strings.header.permissions} value={p.mode}>
+      <Select label={strings.header.permissions} value={p.mode} onChange={(v) => p.onMode?.(v as PermissionMode)}>
         {modes.map((m) => <option key={m} value={m}>{strings.mode[m]}</option>)}
       </Select>
     </>
@@ -71,9 +73,11 @@ export function Header(p: HeaderProps) {
       ) : (
         controls
       )}
-      <IconButton label={strings.header.inspector} aria-pressed={p.inspectorOpen} onClick={p.onToggleInspector} className={p.inspectorOpen ? 'bg-well' : ''}>
-        <PanelRight aria-hidden className="size-5" />
-      </IconButton>
+      {p.onToggleInspector && (
+        <IconButton label={strings.header.inspector} aria-pressed={p.inspectorOpen} onClick={p.onToggleInspector} className={p.inspectorOpen ? 'bg-well' : ''}>
+          <PanelRight aria-hidden className="size-5" />
+        </IconButton>
+      )}
     </header>
   );
 }

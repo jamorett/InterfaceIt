@@ -1,4 +1,6 @@
-import { Minimize2, Square } from 'lucide-react';
+import { ArrowDown, Minimize2, Square } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { PermissionCard } from '../cards/PermissionCard.tsx';
 import { PlanReview } from '../cards/PlanReview.tsx';
 import { QuestionCard } from '../cards/QuestionCard.tsx';
@@ -84,19 +86,81 @@ function Item({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: H
   }
 }
 
-/** The conversation column: 780 px max, centred. Cards are wrapped one by one so a renderer bug stays local. */
-export function Transcript({ items, debug = false, announce, on = {} }: { items: TranscriptItem[]; debug?: boolean; announce?: string; on?: Handlers }) {
+function Card({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: Handlers }) {
   return (
-    <div role="log" aria-label={strings.transcript.region} aria-live="off" tabIndex={0} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-[780px] flex-col gap-3 px-4 py-4">
-        {items.map((item) => (
-          <CardBoundary key={keyOf(item)} raw={item}>
-            <Item item={item} debug={debug} on={on} />
-          </CardBoundary>
-        ))}
+    <CardBoundary raw={item}>
+      <Item item={item} debug={debug} on={on} />
+    </CardBoundary>
+  );
+}
+
+type Props = {
+  items: TranscriptItem[];
+  debug?: boolean;
+  announce?: string;
+  on?: Handlers;
+  /** false renders every card (the static design previews, so tests can see all of them); the app always virtualizes */
+  virtualize?: boolean;
+};
+
+/**
+ * The conversation column: 780 px max, centred. Long sessions are virtualized (only the cards on screen exist);
+ * it follows the end while you are at the bottom and, once you scroll up, leaves you alone and offers "jump to latest".
+ * Cards are wrapped one by one so a renderer bug stays local.
+ */
+export function Transcript({ items, debug = false, announce, on = {}, virtualize = true }: Props) {
+  const list = useRef<VirtuosoHandle>(null);
+  const [atBottom, setAtBottom] = useState(true);
+  const [unseen, setUnseen] = useState(0);
+  const seen = useRef(items.length);
+
+  useEffect(() => {
+    if (!atBottom && items.length > seen.current) setUnseen((n) => n + items.length - seen.current);
+    seen.current = items.length;
+  }, [items.length, atBottom]);
+
+  const live = <div className="sr-only" aria-live="polite">{announce}</div>; // once per finished block, never per token (PLAN.md §9.3)
+
+  if (!virtualize) {
+    return (
+      <div role="log" aria-label={strings.transcript.region} aria-live="off" tabIndex={0} className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-[780px] flex-col gap-3 px-4 py-4">
+          {items.map((item) => <Card key={keyOf(item)} item={item} debug={debug} on={on} />)}
+        </div>
+        {live}
       </div>
-      {/* once per finished block, never per token (PLAN.md §9.3) */}
-      <div className="sr-only" aria-live="polite">{announce}</div>
+    );
+  }
+
+  return (
+    <div role="log" aria-label={strings.transcript.region} aria-live="off" className="relative min-h-0 flex-1">
+      <Virtuoso
+        ref={list}
+        className="h-full"
+        data={items}
+        computeItemKey={(_, item) => keyOf(item)}
+        initialTopMostItemIndex={Math.max(items.length - 1, 0)}
+        followOutput={(bottom) => (bottom ? 'auto' : false)}
+        atBottomStateChange={(b) => { setAtBottom(b); if (b) setUnseen(0); }}
+        increaseViewportBy={300}
+        itemContent={(_, item) => (
+          <div className="mx-auto w-full max-w-[780px] px-4 py-1.5">
+            <Card item={item} debug={debug} on={on} />
+          </div>
+        )}
+      />
+      {!atBottom && (
+        <button
+          type="button"
+          onClick={() => list.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth', align: 'end' })}
+          className="enter press absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-card px-3 py-1.5 text-sm shadow-lg hover:bg-well"
+        >
+          <ArrowDown aria-hidden className="size-4" />
+          {strings.transcript.jumpLabel}
+          {unseen > 0 && <span className="rounded-full bg-accent-fill px-1.5 text-xs text-on-accent">{unseen}</span>}
+        </button>
+      )}
+      {live}
     </div>
   );
 }

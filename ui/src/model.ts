@@ -1,10 +1,9 @@
 // View models: what the components render. M1 step 3 maps bridge events (shared/events.ts) onto these,
 // so components never see SDK or wire shapes and the dev gallery can feed them plain objects.
 
-export type SessionState =
-  | 'idle' | 'running' | 'awaiting_permission' | 'awaiting_answer' | 'compacting' | 'retrying' | 'rate_limited' | 'error' | 'ended';
-
-export type PermissionMode = 'default' | 'acceptEdits' | 'auto' | 'plan' | 'dontAsk' | 'bypassPermissions';
+// one definition, shared with the bridge
+import type { SessionState } from '@ci/shared';
+export type { PermissionMode, SessionState } from '@ci/shared';
 
 /** Set on anything that must not play its enter animation (replayed history, bursts: see motion.ts). */
 type Instant = { instant?: boolean };
@@ -33,12 +32,16 @@ export type PermissionView = Instant & {
   diff?: DiffLine[];
   /** the SDK says this must be answered by a person, so "always allow" is not offered */
   requiresUserInteraction?: boolean;
+  /** false when the CLI offered nothing to remember: "Allow for…" is hidden */
+  canRemember?: boolean;
   decision?: PermissionDecision;
   denyReason?: string;
 };
 
 export type QuestionView = Instant & {
   id: string;
+  /** the request this question belongs to; several questions can share one */
+  reqId?: string;
   header: string;
   question: string;
   options: { label: string; description: string }[];

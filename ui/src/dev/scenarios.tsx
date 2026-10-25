@@ -40,6 +40,7 @@ function Live({ items, debug }: { items: TranscriptItem[]; debug?: boolean }) {
     setList((l) => l.map((i) => ('view' in i && i.view.id === id ? ({ ...i, view: { ...i.view, ...change } } as TranscriptItem) : i)));
   return (
     <Transcript
+      virtualize={false}
       items={list}
       debug={debug}
       on={{

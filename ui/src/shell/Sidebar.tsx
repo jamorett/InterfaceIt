@@ -14,9 +14,11 @@ type Props = {
   /** true when opened or closed by a keyboard shortcut: no animation for repeated keyboard actions */
   instant?: boolean;
   onClose?: () => void;
+  onSelect?: (id: string) => void;
+  onNew?: () => void;
 };
 
-function List({ sessions, activeId, rail }: { sessions: SessionSummary[]; activeId: string; rail: boolean }) {
+function List({ sessions, activeId, rail, onSelect }: { sessions: SessionSummary[]; activeId: string; rail: boolean; onSelect?: (id: string) => void }) {
   const projects = [...new Set(sessions.map((s) => s.project))];
   return (
     <nav aria-label={strings.sidebar.title} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
@@ -26,18 +28,19 @@ function List({ sessions, activeId, rail }: { sessions: SessionSummary[]; active
           <ul className="grid gap-0.5">
             {sessions.filter((s) => s.project === project).map((s) => (
               <li key={s.id}>
-                <a
-                  href={`#${s.id}`}
+                <button
+                  type="button"
+                  onClick={() => onSelect?.(s.id)}
                   aria-current={s.id === activeId ? 'page' : undefined}
                   title={rail ? `${s.title} (${strings.state[s.state]})` : undefined}
-                  className={`press hoverable flex min-h-9 rounded-control px-2 py-1.5 text-base pointer-coarse:min-h-11 ${s.id === activeId ? 'bg-well' : ''} ${rail ? 'items-center justify-center' : 'flex-col gap-0.5'}`}
+                  className={`press hoverable flex min-h-9 w-full rounded-control px-2 py-1.5 text-left text-base pointer-coarse:min-h-11 ${s.id === activeId ? 'bg-well' : ''} ${rail ? 'items-center justify-center' : 'flex-col gap-0.5'}`}
                 >
                   {!rail && <span className={`truncate ${s.id === activeId ? 'font-medium' : ''}`}>{s.title}</span>}
                   <span className="flex items-center gap-2">
                     <SessionBadge state={s.state} labelHidden={rail} />
                     {!rail && <span className="ml-auto shrink-0 text-xs text-muted">{s.updated}</span>}
                   </span>
-                </a>
+                </button>
               </li>
             ))}
           </ul>
@@ -47,7 +50,7 @@ function List({ sessions, activeId, rail }: { sessions: SessionSummary[]; active
   );
 }
 
-export function Sidebar({ sessions, activeId, variant, open = false, instant = false, onClose }: Props) {
+export function Sidebar({ sessions, activeId, variant, open = false, instant = false, onClose, onSelect, onNew }: Props) {
   const rail = variant === 'rail';
   const body = (
     <>
@@ -62,12 +65,12 @@ export function Sidebar({ sessions, activeId, variant, open = false, instant = f
         </div>
       )}
       <div className={rail ? 'flex justify-center p-2' : 'px-2 pb-1'}>
-        <IconButton label={strings.sidebar.newSession} className={rail ? '' : 'w-full justify-start gap-2 px-2'}>
+        <IconButton label={strings.sidebar.newSession} onClick={onNew} className={rail ? '' : 'w-full justify-start gap-2 px-2'}>
           <Plus aria-hidden className="size-5" />
           {!rail && <span className="text-base">{strings.sidebar.newSession}</span>}
         </IconButton>
       </div>
-      <List sessions={sessions} activeId={activeId} rail={rail} />
+      <List sessions={sessions} activeId={activeId} rail={rail} onSelect={(id) => { onSelect?.(id); if (variant === 'drawer') onClose?.(); }} />
     </>
   );
 

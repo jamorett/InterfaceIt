@@ -74,6 +74,7 @@ export const strings = {
     cancel: 'Cancel',
     reasonLabel: 'Tell Claude why (optional)',
     keys: 'Keys: Y allow · N deny · A allow for…',
+    keysOnce: 'Keys: Y allow · N deny',
     scopes: {
       'allowed-session': 'This session',
       'allowed-local': 'This project, only me',
@@ -170,6 +171,7 @@ export const strings = {
     suggestion: 'Suggested next prompt (Tab to use)',
     disabledLimit: 'Sending is paused until the limit resets.',
     disabledOffline: 'Sending is paused while disconnected.',
+    disabledEnded: 'This session has ended. Resume it or start a new one.',
   },
 
   transcript: {
@@ -179,7 +181,7 @@ export const strings = {
     crash: 'This card could not be shown',
     crashDetail: 'The rest of the conversation is fine. Raw data:',
     local: 'Local command',
-    jump: (n: number) => `${n} new`,
+    jumpLabel: 'Jump to latest',
   },
 
   crashed: {
@@ -214,6 +216,7 @@ export const strings = {
   picker: {
     title: 'Choose a project',
     recent: 'Recent projects',
+    running: 'Running now',
     browse: 'Browse for a folder',
     path: 'Folder path',
     open: 'Open',
