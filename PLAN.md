@@ -483,29 +483,31 @@ Tailwind aliases (in `theme.css` `@theme`): `paper`=bg, `card`=surface, `well`=s
 
 **Result:** `/dev/shell?state=<name>` renders each of 23 states (splash, three onboarding failures, project picker + trust, empty, idle, running, permission ×2, question, plan, todo + 9 lanes, disconnected, rate-limited, limit warning, retrying, crashed, hostile content, failed tool, bypass, inspector) and `/dev/tokens` is the gallery (tokens, type, motion lab, scripted fake session, every card, gauges, banners, responsive iframe). `e2e/states.e2e.ts` runs all 23 × 4 widths × light/dark (**184 pages**) plus the gallery: zero axe violations (WCAG 2.1 A/AA incl. contrast) and no horizontal page scroll. `e2e/behavior.e2e.ts` (26 tests) covers Y/N/A and reasons, question, plan, drawer/rail/dock behaviour, the crash boundary, the animation gate (50 tools → 10 animate, 40 instant; replay → 0 animate), reduced motion, theme switch. Unit tests: contrast of every token pair computed from `theme.css`, dark blocks identical, animation gate, tiers, text helpers, code conventions. What the work changed in the plan: `--warning` darkened (§6.2); motion curves replaced (§8.1); tiers measured on the shell (§7.3); todo strip stays dormant (§13.2). Not built (by design, later milestones): live store/events (M1 step 3), markdown and Shiki (M4), Radix/shadcn menus (first needed in M2 for real), virtualization (M1 step 4), Motion layout animation (M3).
 
-### M1 — Talk to it
-1. Audit packages (report risk / permissions / postinstall), then scaffold workspaces.
+### M1 — Talk to it — ✅ done 2026-10-25
+1. Audit packages (report risk / permissions / postinstall), then scaffold workspaces. ✅
 2. ✅ Verified with `bridge/scripts/probe.ts` against the real SDK (results in §13.2; fixtures in `bridge/test/fixtures/`).
-3. Bridge: ws server → `query()` with streaming input + partial messages → `normalize` → `eventlog` with `seq`. Preflight.
-4. UI: shell layout (responsive), Onboarding + project picker, Composer (send, queue, Stop), Transcript with auto-scroll + jump-to-latest, Generic tool card, Disconnected state.
-5. Test: recorded + hostile fixtures through `normalize`, assert events.
+3. Bridge: ws server → `query()` with streaming input + partial messages → `normalize` → `eventlog` with `seq`. Preflight. ✅
+4. UI: shell layout (responsive), Onboarding + project picker, Composer (send, queue, Stop), Transcript with auto-scroll + jump-to-latest, Generic tool card, Disconnected state. ✅
+5. Test: recorded + hostile fixtures through `normalize`, assert events. ✅
 
 **Done when:** from `npm start` the browser opens authenticated, a new user reaches their first streamed answer without reading docs, Read/Bash show live cards, Stop interrupts, killing the bridge shows Disconnected and recovers, and it runs on the subscription with no API key set.
 
-### M2 — Control
-Permission card (all scopes, deny with reason, edit input), AskUserQuestion form (multi-select, Other, preview), plan review, todo strip, mode switcher, message queue, notifications, session_state everywhere, motion for these events.
+**Result:** met, and proved three ways. (1) 245+ unit tests, among them every recorded real session through normalizer → event log → state tracker → the UI reducer (`bridge/src/pipeline.test.ts`). (2) ~60 end-to-end tests of the live app against the replayed sessions (`e2e/app.e2e.ts`): streaming with tool cards, Y/N/A permissions, question, plan, deny with reason, Stop, queue, a dropped connection that reconnects with nothing duplicated, reload re-attach, take-over from another tab, folder trust, and axe + "no card past the window edge" on the live screen. (3) `npm run smoke` against the real SDK, 21 checks: handshake, preflight (no email/org leaves the bridge), trust, streaming, usage/models/rate-limit events, an Edit that is allowed and really changes the file, a Write that is denied and leaves the file alone, Stop on a running command followed by a working session, the queue, a second browser replaying all 178 events, and zero unrecognised SDK events. Design changes made while building (the code and `shared/events.ts` are the source of truth where they differ from §2's tables): the bridge keeps the prompt queue itself (the SDK's `interrupt()` would let queued prompts run after a Stop); `tool_input_delta` and `command` events are not emitted; `subagent` became `task` (shell commands are tasks too and stay out of the lanes); history comes from the SDK, not `.jsonl` files; a tab re-attaches only the sessions it had open and offers the others in the project picker; the login hint is the plain `claude auth login` when `claude` is on PATH.
 
-**Done when:** in `manual` mode every write asks inline with a diff preview, Y/N works from the keyboard, the todo strip advances as items complete (proved with a hand-made fixture, because live SDK sessions currently expose no todo tool), and a permission request while the window is unfocused fires an OS notification.
+### M2 — Control — mostly done
+Done: permission card with all scopes, deny with reason and an edit preview; AskUserQuestion form (single/multi, Other); plan review; message queue; mode and model switchers (live); `session_state` in the tab title, status bar and sidebar; one-shot motion for these events; Stop. Remaining: OS notification when the window is not focused; Esc → Stop, Ctrl+Shift+M mode cycling, Alt+↑/↓ to jump between waiting cards; edit-input-then-allow in the permission card; the todo strip stays dormant (no todo tool in SDK sessions, §13.2).
 
-### M3 — Agents & sessions
-Subagent lanes with layout animation, session sidebar (resume/fork/rename/search), `.jsonl` history through `normalize`, usage/context gauge, compaction marker, rate-limit state, background shells.
+**Done when:** in `manual` mode every write asks inline with a diff preview ✅, Y/N works from the keyboard ✅, the todo strip advances as items complete (proved with a hand-made fixture, because live SDK sessions currently expose no todo tool), and a permission request while the window is unfocused fires an OS notification.
+
+### M3 — Agents & sessions — partly done
+Done: subagent lanes from `task` events (without layout animation), session sidebar with live and past sessions, resume of past conversations through the SDK (history never animates), usage/context gauge, usage meter and limit banners, compaction marker, background tasks count. Remaining: fork / rename / search in the sidebar, lane layout animation (needs the `motion` package), per-lane detail view, background-agents dashboard.
 
 **Done when:** a task spawning 2 subagents shows 2 live lanes that collapse when done, reopening the app resumes the session with no replay animation, and the context gauge moves every turn.
 
-### M4 — Rich tools
-Edit/Write/MultiEdit diff (diff2html, CRLF-safe), Bash/PowerShell ANSI output, Read preview + images, Ctrl+K palette and `/` picker from `session_init`, `@` mentions, `!` and `#` prefixes, image paste, MCP status + elicitation, transcript search, export, rewind/edit-and-resend.
+### M4 — Rich tools — started
+Done: formatted answers (react-markdown + GFM; no raw HTML, links filtered, remote images not loaded, half-written fences closed while streaming, copy button on code). Remaining: Edit/Write/MultiEdit diff (diff2html, CRLF-safe), Shiki highlighting, Bash/PowerShell ANSI output, Read preview + images, Ctrl+K palette and `/` picker from `session_init`, `@` mentions, `!` and `#` prefixes, image paste, MCP status + elicitation, transcript search, export, rewind/edit-and-resend.
 
-**Done when:** every hostile fixture in §10 renders without a crash or horizontal page scroll at 360 px wide.
+**Done when:** every hostile fixture in §10 renders without a crash or horizontal page scroll at 360 px wide (✅ for the fixtures that exist today).
 
 ### M5 — Ship-shape
 Multiple tabs with state badges, background agents dashboard, settings & memory editors, custom statusline, Electron wrapper (`safeStorage` for API key mode), density toggle.
@@ -649,7 +651,10 @@ Nothing else without a line in this table.
 ### 14.6 Tests
 - `vitest` for `bridge/src/normalize.ts`, `eventlog.ts`, Command validation, and `ui/src/store.ts`. Fixtures in `bridge/test/fixtures/*.jsonl` (one SDK message per line): recorded real sessions + the hostile cases of §10.
 - `@playwright/test` + `@axe-core/playwright` for the `/dev/tokens` page (M0) and one smoke flow per milestone, run against `npm run dev` with a **fake bridge mode** (`--fake <fixture>` replays a fixture instead of calling the SDK), so UI tests never spend tokens.
-- Commands: `npm test` (vitest), `npm run e2e` (playwright), `npm run typecheck` (`tsc -p` per workspace, `--noEmit`; no project references). A step is done only when all three pass.
+- Commands: `npm test` (vitest), `npm run e2e` (playwright), `npm run typecheck` (`tsc -p` per workspace, `--noEmit`; no project references), and **`npm run check` = all three in order, stopping at the first failure**. A step is done only when `check` passes. `npm run smoke` (real SDK, a few cents of usage) is run before a milestone is called done and whenever `session.ts`, `core.ts` or `normalize.ts` changes.
+- The e2e bridge runs with `--fake` (recorded sessions, `bridge/src/fixture.ts`); put `[[name]]` in a prompt to choose the recording. Everything a test looks for by name must carry a unique suffix: the fake bridge is shared by all tests.
+- Look at the result, not only at the tests: `/dev/shell?state=…` and the production build can be screenshotted with Playwright + Edge (a throwaway script is enough). Two real bugs this session were visible only in a screenshot or in the Vite error overlay, and `e2e/helpers.ts` now fails with Vite's message if the dev build is broken.
+- Tooling trap on this machine: backslashes written through `node - <<'EOF'` scripts in the shell tool can be lost (a regex lost its `\s` and passed vacuously). Edit source with the Edit/Write tools and avoid backslash-heavy strings in shell heredocs.
 - UI dev routes (stripped from production builds by `import.meta.env.DEV`): `/dev/tokens` (gallery) and `/dev/shell?state=<scenario>[&theme=light|dark]` (one scenario filling the window; names in `ui/src/dev/scenario-names.ts`, shared with the tests and enforced by a `Record<ScenarioName, …>` type).
 - E2E specs are named `*.e2e.ts` (Playwright `testMatch`) so vitest never picks them up. E2E runs on port **4318** with the fixed token in `e2e/token.ts` (bridge started by `e2e/server.ts`), using the Edge that ships with Windows (`channel: 'msedge'`), so no browser download is needed.
 - Tests that need a server use port `0` (ephemeral), never a fixed port.
@@ -665,4 +670,10 @@ Nothing else without a line in this table.
 1. ✅ **Done 2026-10-25** — M1 step 1: `git init`, package audit, workspaces scaffold, bridge serving the UI (Vite middleware in dev, static `ui/dist` in production), token handshake (§14.2–14.3). Covered by 7 vitest tests (handshake, Origin, token) and 5 Playwright tests (link connects, hash stripped, reload, bad token, bad Host).
 2. ✅ **Done 2026-10-25** — M1 step 2: `bridge/scripts/probe.ts` ran 14 real sessions and saved the raw messages as fixtures; findings in §13.2 and already folded into §2/§3. Run it again whenever the SDK or CLI version changes (`npm view @anthropic-ai/claude-agent-sdk version`), diff the fixtures, and fix `normalize.ts`.
 3. ✅ **Done 2026-10-25** — M0 (tokens, motion, `/dev/tokens` + `/dev/shell` with fake events, axe matrix). See §11 M0 result.
-4. M1 steps 3–5, then M2 → M5 in order.
+4. ✅ **Done 2026-10-25** — M1 steps 3–5 (contract, normalizer, sessions, live UI). See §11 M1 result.
+5. **Next, in this order** (each needs its own tests; look at screenshots before calling UI work done):
+   1. M2 leftovers: OS notification when unfocused (`Notification` API, ask permission on the first click), Esc → Stop, Ctrl+Shift+M cycles the mode, Alt+↑/↓ jump between waiting cards, edit-input-then-allow.
+   2. M4 core: Edit/Write diff in the inspector (diff2html; install after `npm view` re-check), Shiki for code blocks (lazy, themed from the tokens), ANSI output for Bash, Read preview and images, Ctrl+K palette + `/` picker from `session_init.slashCommands`, `@` file mentions (needs the bridge's `fs_*` commands from §2), image paste.
+   3. M3 leftovers: sidebar search/rename/fork, lane detail, `motion` package for lane layout animation.
+   4. M5: tabs, settings and memory editors, statusline, Electron.
+   5. Verify the ⚠ items of §13.2 as the features that need them are built (fast-mode toggle, hooks, compaction, elicitation).

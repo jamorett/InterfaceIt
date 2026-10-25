@@ -232,5 +232,7 @@ export const strings = {
     starters: ['Explain how this project is organised', 'Find and fix a failing test', 'Review my uncommitted changes'],
   },
 
+  markdown: { copy: 'Copy', copied: 'Copied', image: 'image', table: 'Table' },
+
   inspector: { title: 'Details', close: 'Close details' },
 };

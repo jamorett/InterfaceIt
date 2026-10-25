@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
+import { assertNoBuildError } from './helpers.ts';
 
 async function open(page: Page, state: string) {
   await page.goto(`/dev/shell?state=${state}`);
-  await page.locator('[data-ready]').waitFor();
+  await Promise.race([page.locator('[data-ready]').waitFor(), page.waitForSelector('vite-error-overlay', { state: 'attached' }).then(() => assertNoBuildError(page))]);
 }
 
 // the gallery's id sits on the heading; the section is what contains the content

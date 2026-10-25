@@ -9,6 +9,7 @@ import type { PermissionDecision, PlanView, TranscriptItem } from '../model.ts';
 import { strings } from '../strings.ts';
 import { formatTokens } from '../text.ts';
 import { CardBoundary, CrashCard } from './CardBoundary.tsx';
+import { Markdown } from './Markdown.tsx';
 
 function keyOf(item: TranscriptItem): string {
   if (item.kind === 'tool') return `tool-${item.tool.id}`;
@@ -37,9 +38,9 @@ function Item({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: H
           <pre tabIndex={0} className="mt-1 max-h-72 overflow-auto font-mono text-sm leading-snug whitespace-pre-wrap">{item.text}</pre>
         </div>
       ) : (
-        <p dir="auto" data-instant={item.instant ? '' : undefined} className={`enter text-base leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] ${item.streaming ? 'caret' : ''}`}>
-          {item.text}
-        </p>
+        <div data-instant={item.instant ? '' : undefined} className="enter text-base leading-relaxed [overflow-wrap:anywhere]">
+          <Markdown text={item.text} streaming={item.streaming} />
+        </div>
       );
     case 'thinking':
       return (

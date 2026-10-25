@@ -131,6 +131,29 @@ export const permissionTranscript: TranscriptItem[] = [
   { kind: 'permission', view: permissionEdit },
 ];
 
+/** A formatted answer with everything markdown can throw at the layout: wide tables, long code lines, links, a remote image. */
+const richAnswer = [
+  '## Result',
+  '',
+  'Here is **what changed**:',
+  '',
+  '- the store gained a version field',
+  '- the selectors read it',
+  '',
+  '| file | change |',
+  '|---|---|',
+  '| store.ts | +2 −1 |',
+  '| a-very-long-file-name-that-keeps-going-and-going-and-going-and-going.test.ts | +40 |',
+  '',
+  '~~~ts',
+  'export const store = create(() => ({ items: [] as Item[], version: 2, aVeryLongLineOfCode: "x".repeat(400) }));',
+  '~~~',
+  '',
+  '> Note: nothing outside ui/src changed.',
+  '',
+  '[docs](https://example.com/docs) and ![remote image](https://tracker.example/p.png)',
+].join('\n');
+
 export const hostileTranscript: TranscriptItem[] = [
   { kind: 'user', id: 'h1', text: 'Z'.repeat(400) + ' and some مرحبا بالعالم 你好，世界 🎉🎉 text' },
   { kind: 'tool', tool: { id: 'h2', name: 'Read', target: 'C:\\Users\\someone\\Documents\\a\\very\\deeply\\nested\\folder\\structure\\that\\keeps\\going\\and\\going\\until\\it\\reaches\\Component.tsx', status: 'ok', output: 'x'.repeat(600) + '\n' + Array.from({ length: 80 }, (_, i) => `line ${i + 1}`).join('\n'), truncatedBytes: 4_300_000 } },
@@ -145,6 +168,7 @@ export const hostileTranscript: TranscriptItem[] = [
   { kind: 'assistant', id: 'h8', text: '/context output', synthetic: true },
   { kind: 'assistant', id: 'h9', text: 'https://example.com/' + 'a-very-long-url-segment/'.repeat(12) },
   { kind: 'notice', id: 'h10', level: 'warning', text: 'A fallback model answered this turn.' },
+  { kind: 'assistant', id: 'h11', text: richAnswer },
 ];
 
 export const failedTranscript: TranscriptItem[] = [

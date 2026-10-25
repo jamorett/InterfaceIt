@@ -2,7 +2,7 @@
 // The bridge runs with --fake, so nothing here spends usage. Put [[name]] in a prompt to pick the recording.
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
-import { offscreen } from './helpers.ts';
+import { assertNoBuildError, offscreen } from './helpers.ts';
 import { TOKEN } from './token.ts';
 
 /** the fake bridge is shared by every test (and every repeat), so anything a test looks for by name gets a unique suffix */
@@ -10,6 +10,7 @@ const uniq = () => Math.random().toString(36).slice(2, 8);
 
 async function start(page: Page) {
   await page.goto(`/#t=${TOKEN}`);
+  await assertNoBuildError(page);
   // exact: sessions already running elsewhere are listed above with the same folder in their label
   await page.getByRole('button', { name: 'C:/demo/ClaudeInterface', exact: true }).click();
   await expect(page.getByLabel('Message')).toBeEnabled();

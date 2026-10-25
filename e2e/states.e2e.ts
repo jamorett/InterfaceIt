@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { scenarioNames } from '../ui/src/dev/scenario-names.ts';
-import { offscreen } from './helpers.ts';
+import { assertNoBuildError, offscreen } from './helpers.ts';
 
 // M0 acceptance (PLAN.md §11): every state of §7.1 at all four widths, light and dark,
 // with zero axe violations (contrast included) and no horizontal scroll of the page.
@@ -26,7 +26,7 @@ for (const scheme of schemes) {
       for (const name of scenarioNames) {
         test(name, async ({ page }) => {
           await page.goto(`/dev/shell?state=${name}`);
-          await page.locator('[data-ready]').waitFor();
+          await Promise.race([page.locator('[data-ready]').waitFor(), page.waitForSelector('vite-error-overlay', { state: 'attached' }).then(() => assertNoBuildError(page))]);
           await audit(page);
         });
       }

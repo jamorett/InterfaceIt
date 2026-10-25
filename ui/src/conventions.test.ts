@@ -13,7 +13,7 @@ function walk(dir: string): string[] {
 }
 
 // PLAN.md §14.7: colours only in theme.css; the skills' "never ship" list for motion
-const sources = walk(root).filter((f) => /\.(tsx?|css)$/.test(f) && !/\.test\.ts$/.test(f) && !f.endsWith('theme.css'));
+const sources = walk(root).filter((f) => /\.(tsx?|css)$/.test(f) && !/\.test\.tsx?$/.test(f) && !f.endsWith('theme.css'));
 const rules: [string, RegExp][] = [
   ['hex colour outside theme.css', /#[0-9a-fA-F]{3,8}\b/],
   ['rgb()/hsl() colour outside theme.css', /\b(rgb|hsl)a?\(/],
