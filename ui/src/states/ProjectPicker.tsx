@@ -13,7 +13,7 @@ export function ProjectPicker({ recent, running = [], trusting, notice, busy, on
 
   if (trusting) {
     return (
-      <div className="grid h-full place-items-center overflow-auto bg-paper p-4 text-ink">
+      <div className="grid h-full grid-cols-[minmax(0,1fr)] place-items-center overflow-auto bg-paper p-4 text-ink">
         <section aria-labelledby="trust-title" className="enter-slow w-full max-w-[480px] rounded-card border border-line bg-card p-5">
           <h1 id="trust-title" className="text-lg font-semibold">{strings.picker.trustTitle}</h1>
           <p className="mt-1 font-mono text-base [overflow-wrap:anywhere]">{trusting}</p>
@@ -28,7 +28,7 @@ export function ProjectPicker({ recent, running = [], trusting, notice, busy, on
   }
 
   return (
-    <div className="grid h-full place-items-start justify-items-center overflow-auto bg-paper p-4 text-ink">
+    <div className="grid h-full grid-cols-[minmax(0,1fr)] place-items-start justify-items-center overflow-auto bg-paper p-4 text-ink">
       <section aria-labelledby="pick-title" className="enter-slow w-full max-w-[560px] rounded-card border border-line bg-card p-5">
         <h1 id="pick-title" className="text-lg font-semibold">{strings.picker.title}</h1>
         {running.length > 0 && (

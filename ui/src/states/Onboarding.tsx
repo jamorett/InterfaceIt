@@ -19,7 +19,7 @@ export function Onboarding({ kind, command, onCheck }: { kind: OnboardingKind; /
     }
   };
   return (
-    <div className="grid h-full place-items-center overflow-auto bg-paper p-4 text-ink">
+    <div className="grid h-full grid-cols-[minmax(0,1fr)] place-items-center overflow-auto bg-paper p-4 text-ink">
       <section aria-labelledby="ob-title" className="enter-slow @container w-full max-w-[480px] rounded-card border border-line bg-card p-5">
         <h1 id="ob-title" className="text-lg font-semibold">{t.title}</h1>
         <p className="mt-2 text-base text-muted">{t.body}</p>

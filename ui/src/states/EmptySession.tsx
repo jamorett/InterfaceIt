@@ -3,7 +3,7 @@ import { strings } from '../strings.ts';
 
 export function EmptySession({ hasInstructions = true, onPick }: { hasInstructions?: boolean; onPick?: (text: string) => void }) {
   return (
-    <div className="grid min-h-0 flex-1 place-items-center overflow-auto p-4">
+    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] place-items-center overflow-auto p-4">
       <div className="enter-slow w-full max-w-[560px]">
         <h2 className="text-lg font-semibold">{strings.empty.title}</h2>
         {hasInstructions && (

@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { deleteSession } from '@anthropic-ai/claude-agent-sdk';
 import WebSocket from 'ws';
 import type { UiEvent } from '@ci/shared';
 import type { Command } from '@ci/shared/commands';
@@ -39,6 +40,7 @@ async function waitFor<T extends UiEvent>(pred: (e: UiEvent) => e is T, ms = 90_
 const is = <K extends string>(type: K, extra?: (e: any) => boolean) => (e: UiEvent): e is Extract<UiEvent, { type: K }> => e.type === type && (!extra || extra(e));
 
 let ws!: WebSocket;
+let sessionId: string | undefined;
 const send = (c: Command) => ws.send(JSON.stringify(c));
 const mark = () => events.length;
 
@@ -88,6 +90,7 @@ try {
   send({ type: 'start', cwd: dir, model: 'haiku', effort: 'low' });
   const opened = await waitFor(is('session_opened'), 10_000);
   const sid = opened.sessionId;
+  sessionId = sid;
   check('session opens after trusting', true);
 
   // 1) a plain answer streams, the status goes running → idle, and the extras arrive
@@ -173,6 +176,8 @@ try {
 } finally {
   ws?.close();
   bridge.kill();
+  // the conversation is stored by Claude Code under the throwaway folder; remove it so it never shows in a real recent-projects list
+  if (sessionId) await sleep(500).then(() => deleteSession(sessionId!, { dir }).catch(() => undefined));
 }
 
 const failed = results.filter(([, ok]) => !ok);
