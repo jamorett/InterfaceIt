@@ -6,6 +6,50 @@ A visual interface for [Claude Code](https://code.claude.com). It runs on your m
 
 > Independent project. Not made by or affiliated with Anthropic. Inside the code and the UI the app is still called ClaudeInterface, which is why the environment variables start with `CLAUDEINTERFACE_`.
 
+## Quick start
+
+**1. Get the two things it needs**
+
+- [Node.js](https://nodejs.org) 24 or newer (check with `node --version`).
+- Claude Code, installed and signed in. If you do not have it yet:
+  ```
+  npm install -g @anthropic-ai/claude-code
+  claude auth login
+  ```
+  Claude Code needs its own Claude account or API access. InterfaceIt does not replace that and never touches your login.
+
+**2. Install and start**
+
+```
+git clone https://github.com/jamorett/InterfaceIt.git
+cd InterfaceIt
+npm install
+npm start
+```
+
+The first run takes a minute (dependencies and the page build). After that, `npm start` is all you need from this folder. It prints a link and opens your browser. Leave that terminal open: it is the app. Press `Ctrl+C` in it to stop everything.
+
+**3. Use it**
+
+1. Pick a project from the list, or type a folder path and press **Open**. A new folder asks whether you trust it first.
+2. Type in the box at the bottom and press `Enter`. `Shift+Enter` starts a new line.
+3. Watch the tool cards appear. When Claude needs permission, the request shows up in the conversation: press **Allow** (or `Y`), **Deny** (or `N`).
+4. `Esc` or the **Stop** button interrupts. The session stays open and you can keep going.
+5. `Ctrl+K` opens the command palette. `/` lists slash commands, `@` completes file names.
+6. **New session** in the sidebar starts another one next to the first. Hover a running session and click ✕ to close it.
+
+**If something does not work**
+
+| What you see | What to do |
+|---|---|
+| The page says Claude Code is missing or too old | Run the command it shows, then press **Check again** |
+| The page says you are not logged in | Run `claude auth login` in a terminal, then **Check again** |
+| `Port 4317 is already in use` | Another copy is running. Close it, or use another port: PowerShell `$env:CLAUDEINTERFACE_PORT=4320; npm start`, bash `CLAUDEINTERFACE_PORT=4320 npm start` |
+| You closed the tab and lost the link | In the terminal where it runs, type `url` and press Enter. Open the new link exactly as printed, the token after `#t=` is part of it |
+| The page asks for a token or shows "no link" | The token changes every time the app starts, so an old bookmark stops working. Open the link the terminal printed this time |
+
+Everything runs on `127.0.0.1`, so nothing is reachable from other machines.
+
 ## Why
 
 The terminal is great for running Claude Code and awkward for reading it. A long session scrolls past, a permission prompt is a line of text with `y/n`, a diff is a wall of `+` and `-`, and running two sessions means two terminal windows. InterfaceIt keeps everything Claude Code can do and changes how it is presented:
@@ -87,18 +131,9 @@ Details and the reasoning behind each decision are in [`PLAN.md`](PLAN.md).
 - A new folder asks "do you trust this folder?" before Claude can work in it, unless you already trusted it in the CLI.
 - Model output is never rendered as HTML. Links are limited to `http(s)` and `mailto`, and remote images are not loaded.
 
-## Run it
+## Development
 
-You need Node 24 or newer and Claude Code signed in (`claude auth login` if you have not done that yet).
-
-```
-npm install
-npm start
-```
-
-`npm start` builds the page, starts the bridge on `127.0.0.1:4317` and opens your browser with a one-time link. If you close the tab, type `url` and Enter in that terminal to print the link again. To use another port, set `CLAUDEINTERFACE_PORT`.
-
-For development, `npm run dev` rebuilds on change. Every bridge restart makes a new link.
+`npm start` builds the page once and serves it. For development use `npm run dev`, which restarts on change. Every bridge restart makes a new link. The design gallery (every colour, state and card) is at `/dev/tokens` in dev mode.
 
 ## Project layout
 
