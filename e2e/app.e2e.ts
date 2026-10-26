@@ -233,6 +233,20 @@ test.describe('connection and sessions', () => {
     await expect(other.getByLabel('Message')).toBeEnabled();
   });
 
+  test('the sidebar closes a running session, which then disappears from the running list', async ({ page, context }) => {
+    await page.setViewportSize({ width: 1500, height: 800 }); // the full sidebar; the icon rail has no room for the button
+    await start(page);
+    const name = `close me ${uniq()}`;
+    await say(page, `[[basic]] ${name}`);
+    await idle(page);
+    await page.getByRole('button', { name: `Close session: [[basic]] ${name}` }).click();
+    await expect(page.getByRole('heading', { name: 'Choose a project' })).toBeVisible();
+    const other = await context.newPage();
+    await other.goto(`/#t=${TOKEN}`);
+    await expect(other.getByRole('heading', { name: 'Choose a project' })).toBeVisible();
+    await expect(other.getByRole('button', { name: new RegExp(name) })).toHaveCount(0);
+  });
+
   test('a folder nobody trusted yet asks first, and works once trusted', async ({ page }) => {
     const folder = 'C:/work/untrusted-' + uniq(); // the fake bridge remembers a trusted folder for as long as it runs
     await page.goto(`/#t=${TOKEN}`);
@@ -265,7 +279,7 @@ test.describe('connection and sessions', () => {
     await idle(page);
     const nav = page.getByRole('navigation', { name: 'Sessions' });
     await expect(nav.getByText(`[[basic]] ${name}`)).toBeVisible();
-    await nav.getByRole('button', { name: new RegExp(name) }).click();
+    await nav.getByRole('button', { name: new RegExp(`^\\[\\[basic\\]\\] ${name}`) }).click(); // not the "Close session: …" button
     await expect(page.getByText(/Steps 1 and 2 are done/).first()).toBeVisible();
   });
 });

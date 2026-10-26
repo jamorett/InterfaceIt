@@ -70,9 +70,9 @@ export function SessionScreen({ view }: { view: SessionView }) {
     ...(view.commands.length ? view.commands : (view.init?.slashCommands ?? []).map((name) => ({ name }))).map((c) => ({ id: `cmd-${c.name}`, label: strings.palette.run(c.name), run: () => act.prompt(`/${c.name}`) })),
   ];
 
-  const live: SessionSummary[] = order.flatMap((id) => (views[id] ? [{ id, project: basename(views[id]!.cwd), title: titleOf(views[id]!), state: views[id]!.state, updated: 'now' }] : []));
+  const live: SessionSummary[] = order.flatMap((id) => (views[id] ? [{ id, project: basename(views[id]!.cwd), title: titleOf(views[id]!), state: views[id]!.state, updated: 'now', live: true }] : []));
   const liveIds = new Set(order.flatMap((id) => [id, views[id]?.init?.sdkSessionId]));
-  const stored: SessionSummary[] = past.filter((p) => !liveIds.has(p.id)).slice(0, 50).map((p) => ({ id: p.id, project: basename(p.cwd), title: p.title, state: p.live ? 'running' : 'idle', updated: p.live ? 'now' : ago(p.updated) }));
+  const stored: SessionSummary[] = past.filter((p) => !liveIds.has(p.id)).slice(0, 50).map((p) => ({ id: p.id, project: basename(p.cwd), title: p.title, state: p.live ? 'running' : 'idle', updated: p.live ? 'now' : ago(p.updated), live: p.live }));
 
   const limitWindow = (label: string, w?: { utilization: number; resetsAt: number }): LimitWindow[] => (w ? [{ label, utilization: w.utilization, resetsAt: resetsAt(w.resetsAt) }] : []);
   const limits = [...limitWindow('5h', view.limits.fiveHour), ...limitWindow('7d', view.limits.sevenDay)];
@@ -102,6 +102,7 @@ export function SessionScreen({ view }: { view: SessionView }) {
       activeId={view.id}
       onSelectSession={select}
       onNewSession={act.newSession}
+      onCloseSession={act.closeSession}
       onEscape={() => { if (['running', 'awaiting_permission', 'awaiting_answer', 'compacting', 'retrying'].includes(view.state)) act.stop(); }}
       onCycleMode={() => act.setMode(nextMode(view.mode))}
       header={{

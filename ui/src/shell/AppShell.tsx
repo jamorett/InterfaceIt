@@ -22,6 +22,7 @@ type Props = {
   inspectorOpen?: boolean;
   onSelectSession?: (id: string) => void;
   onNewSession?: () => void;
+  onCloseSession?: (id: string) => void;
   /** Esc with nothing to close: the session screen uses it to stop a running turn */
   /** changes whenever something asks the panel to open (a card's "open in side panel") */
   openInspectorSignal?: number;
@@ -36,7 +37,7 @@ type Props = {
  * desktop ≥1440 sidebar + transcript + docked inspector · laptop ≥1024 icon rail ·
  * tablet ≥720 sidebar is a drawer, inspector a sheet · narrow <720 single column, status folds into the header menu.
  */
-export function AppShell({ sessions, activeId, header, banners, lanes, children, bottom, inspector, inspectorTitle, inspectorOpen = false, onSelectSession, onNewSession, openInspectorSignal, onEscape, onCycleMode, className = 'h-full' }: Props) {
+export function AppShell({ sessions, activeId, header, banners, lanes, children, bottom, inspector, inspectorTitle, inspectorOpen = false, onSelectSession, onNewSession, onCloseSession, openInspectorSignal, onEscape, onCycleMode, className = 'h-full' }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const width = useMeasuredWidth(ref);
   const tier = tierFor(width);
@@ -94,8 +95,8 @@ export function AppShell({ sessions, activeId, header, banners, lanes, children,
     <TierContext.Provider value={tier}>
       <div ref={ref} className={`@container relative flex flex-col overflow-hidden bg-paper text-ink ${className}`}>
         <div className="flex min-h-0 flex-1">
-          {docked && <Sidebar sessions={sessions} activeId={activeId} variant={sidebarWide ? 'full' : 'rail'} onSelect={onSelectSession} onNew={onNewSession} />}
-          <div className="flex min-w-0 flex-1 flex-col">
+          {docked && <Sidebar sessions={sessions} activeId={activeId} variant={sidebarWide ? 'full' : 'rail'} onSelect={onSelectSession} onNew={onNewSession} onCloseSession={onCloseSession} />}
+  <div className="flex min-w-0 flex-1 flex-col">
             <Header
               {...header}
               onMenu={click(() => setDrawer(true))}
@@ -116,12 +117,12 @@ export function AppShell({ sessions, activeId, header, banners, lanes, children,
           )}
         </div>
         {tier !== 'narrow' && (
-          <footer className="border-t border-line bg-card px-4 py-1.5">
+          <footer className="border-t border-line bg-well px-4 py-1.5 tabular-nums">
             <StatusSummary {...header.status} />
           </footer>
         )}
-        {!docked && <Sidebar sessions={sessions} activeId={activeId} variant="drawer" open={drawer} instant={viaKeyboard} onClose={click(() => setDrawer(false))} onSelect={onSelectSession} onNew={onNewSession} />}
-      </div>
+        {!docked && <Sidebar sessions={sessions} activeId={activeId} variant="drawer" open={drawer} instant={viaKeyboard} onClose={click(() => setDrawer(false))} onSelect={onSelectSession} onNew={onNewSession} onCloseSession={onCloseSession} />}
+</div>
     </TierContext.Provider>
   );
 }

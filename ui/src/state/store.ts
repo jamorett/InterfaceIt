@@ -54,6 +54,8 @@ export type Store = {
   cancelTrust(): void;
   select(id: string): void;
   newSession(): void;
+  /** end a session in the bridge and drop it from this tab; its conversation stays on disk */
+  closeSession(id: string): void;
   openPast(info: SessionInfo): void;
   /** take over a session the bridge is running (started in another tab, or before a reload) */
   attachLive(info: SessionInfo): void;
@@ -183,6 +185,16 @@ export const useStore = create<Store>()((set, get) => {
     cancelTrust: () => set({ trusting: undefined }),
     select: (id) => set({ activeId: id }),
     newSession: () => set({ activeId: undefined }),
+    closeSession(id) {
+      get().send({ type: 'close', sessionId: id });
+      set((s) => {
+        const { [id]: _gone, ...views } = s.views;
+        const order = s.order.filter((x) => x !== id);
+        return { views, order, past: s.past.map((p) => (p.id === id ? { ...p, live: false } : p)), activeId: s.activeId === id ? order.at(-1) : s.activeId };
+      });
+      saveOpen(get().order);
+      get().send({ type: 'list_sessions' });
+    },
     openPast(info) {
       const live = Object.values(get().views).find((v) => v.id === info.id || v.init?.sdkSessionId === info.id);
       if (live) return set({ activeId: live.id });

@@ -38,6 +38,7 @@ export const strings = {
     model: 'Model',
     permissions: 'Permissions',
     inspector: 'Toggle inspector',
+    theme: (t: 'light' | 'dark' | 'system') => `Theme: ${t} (click to change)`,
     bypassWarning: 'Permissions are off: Claude can change files and run commands without asking.',
   },
 
@@ -46,6 +47,7 @@ export const strings = {
     search: 'Search sessions',
     newSession: 'New session',
     close: 'Close sessions',
+    closeSession: (title: string) => `Close session: ${title}`,
   },
 
   tool: {

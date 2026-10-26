@@ -9,9 +9,9 @@
 
 :root {
   color-scheme: light;
-  --bg: #FAF8F1;
+  --bg: #FFFFFF;
   --surface: #FFFFFF;
-  --surface-sunken: #F2EFE4;
+  --surface-sunken: #F4F4F2;
   --text: #334443;
   --text-muted: #5E6B69;
   --primary: #34656D;
@@ -92,6 +92,10 @@
   --radius-control: 6px;
   --radius-card: 10px;
 
+  /* depth comes from the ink colour at low alpha, so it follows light and dark */
+  --shadow-card: 0 1px 2px color-mix(in srgb, var(--text) 8%, transparent), 0 0 0 0.5px color-mix(in srgb, var(--text) 4%, transparent);
+  --shadow-lg: 0 10px 28px -8px color-mix(in srgb, var(--text) 22%, transparent), 0 2px 6px color-mix(in srgb, var(--text) 8%, transparent);
+
   /* the four layout tiers of §7.3, as container queries: @tablet:, @laptop:, @desktop: */
   --container-tablet: 45rem;
   --container-laptop: 64rem;
@@ -140,7 +144,21 @@ html {
   font-size: 14px;
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+/* thin scrollbars in the ink colour, everywhere: transcript, code, diffs, inspector, sidebar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text) 24%, transparent) transparent;
+}
+/* the transcript keeps its width when the bar appears, and does not hand its scroll to the page */
+[data-virtuoso-scroller], [role="log"] {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+h1, h2, h3, h4 { text-wrap: balance; }
 
 body {
   margin: 0;
@@ -210,6 +228,7 @@ button:disabled { cursor: not-allowed; }
   .md > :first-child { margin-top: 0; }
   .md > :last-child { margin-bottom: 0; }
   .md p, .md ul, .md ol, .md blockquote { margin: 0.5em 0; }
+  .md p, .md li { text-wrap: pretty; }
   .md ul { list-style: disc; padding-left: 1.4em; }
   .md ol { list-style: decimal; padding-left: 1.5em; }
   .md li { margin: 0.15em 0; }

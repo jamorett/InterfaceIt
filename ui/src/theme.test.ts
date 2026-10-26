@@ -62,7 +62,7 @@ describe('code colours', () => {
 
 describe('palette', () => {
   it('uses the four given colours for their roles', () => {
-    expect(light['--bg']).toBe('#FAF8F1');
+    expect(light['--bg']).toBe('#FFFFFF');
     expect(light['--attention']).toBe('#FAEAB1');
     expect(light['--primary']).toBe('#34656D');
     expect(light['--text']).toBe('#334443');

@@ -4,6 +4,7 @@ import { SessionBadge } from '../components/SessionBadge.tsx';
 import type { PermissionMode, SessionState } from '../model.ts';
 import { strings } from '../strings.ts';
 import { StatusSummary, type StatusProps } from './StatusSummary.tsx';
+import { ThemeButton } from './ThemeButton.tsx';
 import { useTier } from './tier.ts';
 
 export type HeaderProps = {
@@ -46,7 +47,7 @@ export function Header(p: HeaderProps) {
     </>
   );
   return (
-    <header className="flex items-center gap-2 border-b border-line bg-paper px-3 py-1.5">
+    <header className="flex items-center gap-2 border-b border-line bg-paper px-4 py-1.5">
       {(narrow || tier === 'tablet') && (
         <IconButton label={strings.header.menu} onClick={p.onMenu}><Menu aria-hidden className="size-5" /></IconButton>
       )}
@@ -73,6 +74,7 @@ export function Header(p: HeaderProps) {
       ) : (
         controls
       )}
+      <ThemeButton />
       {p.onToggleInspector && (
         <IconButton label={strings.header.inspector} aria-pressed={p.inspectorOpen} onClick={p.onToggleInspector} className={p.inspectorOpen ? 'bg-well' : ''}>
           <PanelRight aria-hidden className="size-5" />

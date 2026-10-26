@@ -53,7 +53,7 @@ export function PermissionCard({ view, onDecide }: { view: PermissionView; onDec
       tabIndex={0}
       onKeyDown={onKeyDown}
       data-instant={view.instant ? '' : undefined}
-      className="enter glow-once @container rounded-card border-l-4 border-caution bg-attention p-3 text-on-attention"
+      className="enter glow-once @container rounded-card border-l-4 shadow-card border-caution bg-attention p-3 text-on-attention"
     >
       <div className="flex flex-wrap items-center gap-x-2 text-sm font-semibold">
         <Diamond aria-hidden className="size-3.5 fill-current" />

@@ -29,7 +29,7 @@ function Item({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: H
   switch (item.kind) {
     case 'user':
       return (
-        <p dir="auto" data-instant={item.instant ? '' : undefined} className="enter ml-auto max-w-[85%] rounded-card bg-accent-fill px-3 py-2 text-base whitespace-pre-wrap text-on-accent [overflow-wrap:anywhere]">
+        <p dir="auto" data-instant={item.instant ? '' : undefined} className="enter my-2 ml-auto w-fit max-w-[85%] rounded-[14px] rounded-br-[4px] bg-accent-fill px-3.5 py-2 text-base shadow-card whitespace-pre-wrap text-on-accent [overflow-wrap:anywhere]">
           {item.images?.map((im, i) => { const src = imageSrc(im); return src && <img key={i} src={src} alt={strings.composer.attached(i + 1)} className="mb-2 max-h-48 rounded-control" />; })}
           {item.text}
         </p>
@@ -165,7 +165,7 @@ export function Transcript({ items, debug = false, announce, on = {}, focusItem,
   if (!virtualize) {
     return (
       <div ref={root} role="log" aria-label={strings.transcript.region} aria-live="off" tabIndex={0} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-[780px] flex-col gap-3 px-4 py-4">
+        <div className="mx-auto flex w-full max-w-[780px] flex-col gap-3 px-6 py-4">
           {items.map((item, i) => <div key={keyOf(item)} data-item-index={i}><Card item={item} debug={debug} on={on} /></div>)}
         </div>
         {live}
@@ -185,7 +185,7 @@ export function Transcript({ items, debug = false, announce, on = {}, focusItem,
         atBottomStateChange={(b) => { setAtBottom(b); if (b) setUnseen(0); }}
         increaseViewportBy={300}
         itemContent={(i, item) => (
-          <div data-item-index={i} className={`mx-auto w-full max-w-[780px] px-4 py-1.5 ${focusItem?.index === i ? 'outline-2 -outline-offset-2 outline-accent' : ''}`}>
+          <div data-item-index={i} className={`mx-auto w-full max-w-[780px] px-6 py-1.5 ${focusItem?.index === i ? 'outline-2 -outline-offset-2 outline-accent' : ''}`}>
             <Card item={item} debug={debug} on={on} />
           </div>
         )}

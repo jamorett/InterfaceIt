@@ -88,7 +88,7 @@ export type TranscriptItem =
   | { kind: 'unknown'; id: string; raw: unknown }
   | { kind: 'crash'; id: string; raw: unknown };
 
-export type SessionSummary = { id: string; project: string; title: string; state: SessionState; updated: string };
+export type SessionSummary = { id: string; project: string; title: string; state: SessionState; updated: string; /** running in the bridge, so it can be closed */ live?: boolean };
 
 export type ContextView = { totalTokens: number; maxTokens: number };
 export type LimitWindow = { label: string; utilization: number; resetsAt: string };

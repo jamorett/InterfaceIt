@@ -125,7 +125,7 @@ export function Composer({ state, queued = [], suggestion, disabledReason, initi
   };
 
   return (
-    <div className="@container border-t border-line bg-paper px-4 pt-2 pb-3" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
+    <div className="@container bg-paper px-6 pt-2 pb-3" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
       <div className="relative mx-auto w-full max-w-[780px]">
         {queued.length > 0 && (
           <ul aria-label={strings.composer.queued} className="mb-2 grid gap-1">
@@ -165,7 +165,7 @@ export function Composer({ state, queued = [], suggestion, disabledReason, initi
             ))}
           </ul>
         )}
-        <div className={`flex flex-wrap items-end gap-2 rounded-card border bg-card p-2 ${disabled ? 'border-line' : 'border-line focus-within:border-accent'}`}>
+        <div className={`flex flex-wrap items-end gap-2 mx-auto w-full max-w-[780px] rounded-card border bg-card p-2 shadow-lg transition-[border-color,box-shadow] duration-[var(--dur-quick)] ease-out ${disabled ? 'border-line' : 'border-line focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20'}`}>
           <label htmlFor="composer" className="sr-only">{strings.composer.label}</label>
           <textarea
             id="composer"

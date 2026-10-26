@@ -22,7 +22,7 @@ export function Inspector({ open, docked, instant = false, title = strings.inspe
   );
   if (docked) {
     if (!open) return null;
-    return <aside aria-label={title} className="flex w-[420px] shrink-0 flex-col border-l border-line bg-paper">{header}<div className="min-h-0 flex-1 overflow-auto p-3">{children}</div></aside>;
+    return <aside aria-label={title} className="flex w-[420px] shrink-0 flex-col border-l border-line bg-paper">{header}<div className="min-h-0 flex-1 overflow-auto p-4">{children}</div></aside>;
   }
   const motion = instant ? 'duration-0' : open ? 'duration-[var(--dur-base)]' : 'duration-[var(--dur-quick)]';
   return (
@@ -33,7 +33,7 @@ export function Inspector({ open, docked, instant = false, title = strings.inspe
         className={`absolute inset-y-0 right-0 flex w-[min(420px,100%)] flex-col border-l border-line bg-paper transition-transform ease-[var(--ease-drawer)] ${motion} ${open ? 'translate-x-0' : 'translate-x-full'} @max-tablet:w-full`}
       >
         {header}
-        <div className="min-h-0 flex-1 overflow-auto p-3">{children}</div>
+        <div className="min-h-0 flex-1 overflow-auto p-4">{children}</div>
       </aside>
     </div>
   );

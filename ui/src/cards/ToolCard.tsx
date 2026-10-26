@@ -47,7 +47,7 @@ export function ToolCard({ tool, onFull }: { tool: ToolView; onFull?: (toolId: s
     <div
       data-instant={tool.instant ? '' : undefined}
       style={{ marginLeft: Math.min(tool.depth ?? 0, MAX_INDENT) * 16 }}
-      className={`enter @container rounded-card border bg-card ${failed ? 'shake-once border-danger border-l-4' : 'border-line'}`}
+      className={`enter @container rounded-card border bg-card shadow-card ${failed ? 'shake-once border-danger border-l-4' : 'border-line'}`}
     >
       <div className="flex items-center">
         <button
@@ -61,7 +61,7 @@ export function ToolCard({ tool, onFull }: { tool: ToolView; onFull?: (toolId: s
           <Icon aria-hidden className="size-4 shrink-0 text-muted" />
           <span className="font-medium">{tool.name}</span>
           <span className="min-w-0 flex-1 truncate font-mono text-sm text-muted" title={tool.target}>{middleTruncate(tool.target, 64)}</span>
-          {tool.elapsedSec !== undefined && <span className="hidden text-sm text-muted @md:inline">{strings.tool.elapsed(tool.elapsedSec)}</span>}
+          {tool.elapsedSec !== undefined && <span className="hidden text-sm text-muted tabular-nums @md:inline">{strings.tool.elapsed(tool.elapsedSec)}</span>}
           <span className={`inline-flex shrink-0 items-center gap-1 text-sm ${failed ? 'text-danger' : tool.status === 'ok' ? 'text-accent' : 'text-muted'}`}>
             {tool.status === 'running' && <LoaderCircle aria-hidden className="spin size-4" />}
             {tool.status === 'ok' && <Check aria-hidden className="size-4" />}
