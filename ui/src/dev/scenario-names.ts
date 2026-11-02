@@ -25,6 +25,7 @@ export const scenarioNames = [
   'tools-rich',
   'subagent-cards',
   'inspector',
+  'nvidia-fallback',
 ] as const;
 
 export type ScenarioName = (typeof scenarioNames)[number];

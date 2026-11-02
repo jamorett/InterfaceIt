@@ -97,6 +97,16 @@ Cards that have more to show (a diff, a long command output, an image) open it i
 ![The command palette](docs/images/palette.png)
 ![Slash commands in the composer](docs/images/slash-commands.png)
 
+### NVIDIA NIM fallback (Polar)
+
+When you hit the Claude rate limit or explicitly choose an NVIDIA model, the app transparently switches to **Polar** — the NVIDIA NIM fallback. The session continues in the same tab with no context loss: the conversation history, tool calls and subagent state are handed off, and Polar takes over with the same toolset (Bash, Read, Write, Edit, Grep, Glob, Task, WebFetch, WebSearch, MCP, screenshot, vision, skills). Permission modes, context compaction, subagents, MCP elicitation and hooks are all implemented and tested.
+
+![NVIDIA NIM fallback banner and model selector](docs/images/nvidia-fallback.png)
+
+A banner in the conversation shows the switch, and the model selector now lists NVIDIA models (Nemotron 3 Ultra, Nemotron 3.5 Ultra, Nemotron 3.5 Super, Llama 3.1 Nemotron 70B, etc.) grouped under **Polar · NVIDIA NIM (fallback)** alongside the Claude models. Set `NVIDIA_API_KEY` in your environment to enable it; the preflight screen will confirm it is detected.
+
+![Model selector with NVIDIA models](docs/images/nvidia-model-selector.png)
+
 ### Sessions that outlive the tab
 
 Sessions run inside the local bridge, not in the browser. Close the tab and a running turn keeps going. Reload and the page reattaches. Open a second tab and it can take over a running session. Past conversations resume from the sidebar, and a running session can be closed with the ✕ on its row.
@@ -114,12 +124,15 @@ The theme follows the system and can be switched from the header (light, dark, s
  Browser (React)  <--WebSocket-->  Bridge (Node)  <--Agent SDK-->  Claude Code
    renders events                   127.0.0.1 only                  the real agent
    sends commands                   one log per session
+                                    │
+                                    └─(rate limit / user picks NVIDIA model)─► NVIDIA NIM (Polar)
 ```
 
 - **Claude Code** does all the work. The bridge uses the Agent SDK, so tools, permissions, hooks, skills and MCP servers behave exactly as in the terminal.
 - **The bridge** is a small Node server. It starts and holds the sessions, turns the SDK's messages into a stable set of events, and keeps an ordered log per session. Because the log lives in the bridge, a reload or a second tab replays it and ends up in the same state.
 - **The browser** is a projection of that log. Events go through a reducer into view models, and components only ever see view models, never SDK shapes. Only one file (`bridge/src/normalize.ts`) knows what SDK messages look like, so an SDK update touches one place.
 - **Commands** from the browser (send a prompt, answer a permission, stop) are validated against a schema before the bridge acts on them.
+- **NVIDIA NIM fallback (Polar)** lives in `bridge/src/nvidia/`. When the Claude SDK signals a rate limit or the user explicitly selects an NVIDIA model, the bridge hands off the session (full history, tool state, subagents) to a Polar session that speaks the NVIDIA NIM API. The UI does not change — it keeps receiving the same `UiEvent` stream. Permissions, compaction, subagents, MCP elicitation and hooks are all implemented for Polar and tested with a fake client (`bridge/src/nvidia/*.test.ts`); `npm run smoke:nvidia` checks it against the real API.
 
 Details and the reasoning behind each decision are in [`PLAN.md`](PLAN.md).
 
@@ -156,6 +169,7 @@ Stack: TypeScript, React 19, Zustand, Tailwind CSS 4, Vite, Shiki for code highl
 | `npm run e2e` | about 270 browser tests on recorded real sessions, including accessibility checks (axe) at several widths in light and dark |
 | `npm run smoke` | drives the **real** Claude Code through the bridge: approved edit, denial, Stop, queue, replay. Costs a few cents of usage |
 | `npm run probe` | records raw SDK messages as fixtures in `bridge/test/fixtures`. Costs a few cents of usage |
+| `npm run smoke:nvidia` | drives the **real NVIDIA NIM API** through the fallback bridge (a few thousand tokens). Run it whenever `bridge/src/nvidia/` changes. |
 
 The end-to-end tests run the bridge with `--fake`, which replays recorded sessions, so `npm run check` never spends usage. The recordings are sanitised: no account details and no personal paths.
 

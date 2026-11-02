@@ -142,5 +142,23 @@ export const scenarios: Record<ScenarioName, () => ReactNode> = {
   'tools-rich': () => <Session state="idle" items={fx.richToolsTranscript} />,
   'subagent-cards': () => <Session state="running" items={fx.subagentTranscript} />,
   inspector: () => <Session state="awaiting_permission" items={fx.permissionTranscript} inspectorOpen />,
+  'nvidia-fallback': () => (
+    <Session
+      state="rate_limited"
+      items={fx.baseTranscript}
+      disabledReason={strings.composer.disabledLimit}
+      banners={
+        <Banner
+          tone="attention"
+          live="assertive"
+          action={
+            <Button variant="primary" onClick={() => {}}>{strings.nvidia.switchToFallback}</Button>
+          }
+        >
+          {strings.limits.reached('at 22:19')} — {strings.nvidia.limitFallbackHint}
+        </Banner>
+      }
+    />
+  ),
 };
 

@@ -15,6 +15,10 @@ export const models = [
   { value: 'opus', label: 'Opus' },
   { value: 'sonnet', label: 'Sonnet' },
   { value: 'haiku', label: 'Haiku' },
+  { value: 'nvidia/nemotron-3-ultra', label: 'Nemotron 3 Ultra' },
+  { value: 'nvidia/nemotron-3-5-ultra', label: 'Nemotron 3.5 Ultra' },
+  { value: 'nvidia/nemotron-3-5-super', label: 'Nemotron 3.5 Super' },
+  { value: 'nvidia/llama-3-1-nemotron-70b', label: 'Llama 3.1 Nemotron 70B' },
 ];
 
 export const context: ContextView = { totalTokens: 30_485, maxTokens: 1_000_000 };
