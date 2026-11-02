@@ -14,6 +14,7 @@ export type SessionSpec = {
   addDirs?: string[];
   /** continue (or, with `fork`, copy) a conversation stored on disk */
   resume?: { sdkSessionId: string; fork?: boolean };
+  provider?: 'claude' | 'nvidia';
 };
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -23,6 +24,7 @@ export class SdkSession extends SessionCore {
   private q: Query;
   private normalizer = createNormalizer('live');
   private modelsSent = false;
+  onRateLimitRejected?: (sessionId: string) => void;
 
   constructor(spec: SessionSpec, id: string = randomUUID()) {
     super(id, spec.cwd);
@@ -68,6 +70,9 @@ export class SdkSession extends SessionCore {
         if (bodies.some((b) => b.type === 'session_init') && !this.modelsSent) void this.sendModels();
         if (bodies.some((b) => b.type === 'session_init' || b.type === 'commands_changed')) void this.sendCommands();
         if (bodies.some((b) => b.type === 'sdk_state' && b.state === 'idle')) void this.refreshUsage();
+        if (bodies.some((b) => b.type === 'rate_limit' && b.status === 'rejected')) {
+          this.onRateLimitRejected?.(this.id);
+        }
       }
       this.finish('finished');
     } catch (e) {
@@ -126,6 +131,13 @@ export class SdkSession extends SessionCore {
 
   async setEffort(effort: Effort): Promise<void> {
     await this.q.applyFlagSettings({ effortLevel: effort });
+    this.ingest([{ type: 'status', compacting: false, effort }]); // so the header shows what was chosen
+  }
+
+  detach(): void {
+    this.ended = true;
+    this.input.end();
+    this.q.close();
   }
 
   close(): void {

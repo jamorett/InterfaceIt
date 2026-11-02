@@ -18,6 +18,7 @@
     "e2e": "playwright test",
     "typecheck": "tsc -p shared && tsc -p bridge && tsc -p ui",
     "smoke": "tsx bridge/scripts/smoke.ts",
+    "smoke:nvidia": "tsx bridge/scripts/smoke-nvidia.ts",
     "probe": "tsx bridge/scripts/probe.ts",
     "check": "npm run typecheck && npm test && npm run e2e"
   },

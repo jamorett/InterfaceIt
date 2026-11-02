@@ -1,4 +1,5 @@
 // Every user-facing string lives here (PLAN.md §1: English now, a Spanish file later, no i18n library).
+import type { Effort } from '@ci/shared';
 import type { PermissionDecision, PermissionMode, SessionState } from './model.ts';
 
 export const strings = {
@@ -32,11 +33,15 @@ export const strings = {
     bypassPermissions: 'Bypass permissions',
   } satisfies Record<PermissionMode, string>,
 
+  effort: { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max' } satisfies Record<Effort, string>,
+
   header: {
     menu: 'Open sessions',
     more: 'More',
     model: 'Model',
     permissions: 'Permissions',
+    effort: 'Effort',
+    effortUnset: 'Default',
     inspector: 'Toggle inspector',
     theme: (t: 'light' | 'dark' | 'system') => `Theme: ${t} (click to change)`,
     bypassWarning: 'Permissions are off: Claude can change files and run commands without asking.',
@@ -285,6 +290,13 @@ export const strings = {
     of: (i: number, n: number) => `${i} of ${n}`,
   },
   shortcuts: { modeChanged: (mode: string) => `Permissions: ${mode}` },
+
+  nvidia: {
+    switchToFallback: 'Switch to NVIDIA Nemotron',
+    limitFallbackHint: 'Click to activate NVIDIA fallback.',
+    claudeGroup: 'Anthropic Claude',
+    nvidiaGroup: 'NVIDIA NIM (Fallback)',
+  },
 
   inspector: { title: 'Details', close: 'Close details', cut: (shown: string, total: string) => `Showing the first ${shown} of ${total} characters.` },
 };

@@ -5,6 +5,19 @@ export type PermissionMode = 'default' | 'acceptEdits' | 'auto' | 'plan' | 'dont
 export const permissionModes: readonly PermissionMode[] = ['default', 'acceptEdits', 'auto', 'plan', 'dontAsk', 'bypassPermissions'];
 export const effortLevels = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Effort = (typeof effortLevels)[number];
+/** NVIDIA NIM ids are "org/model"; Claude ids ("claude-…", "sonnet", "default") never contain a slash. */
+export const isNvidiaModel = (id: string): boolean => id.includes('/');
+/**
+ * The NVIDIA models the fallback offers: the selector and the bridge both read this one list.
+ * Each answered a tool call on a real account (2026-11-02). Others in NVIDIA's catalog gave 404 for that account or never answered.
+ */
+export const nvidiaModelChoices = [
+  { value: 'nvidia/nemotron-3.5-super-vl-120b-a12b', label: 'Nemotron 120B VL (vision + thinking)' },
+  { value: 'nvidia/nemotron-3.5-lightning-30b-a3b', label: 'Nemotron 30B Lightning (fast)' },
+  { value: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', label: 'Nemotron 30B Nano Omni (vision, long output)' },
+  { value: 'nvidia/nemotron-3-ultra-550b-a55b', label: 'Nemotron Ultra 550B (largest)' },
+  { value: 'mistralai/mistral-large-4-1t-a52b', label: 'Mistral Large 4 (slower)' },
+] as const;
 
 export type SessionState =
   | 'idle' | 'running' | 'awaiting_permission' | 'awaiting_answer' | 'compacting' | 'retrying' | 'rate_limited' | 'error' | 'ended';
@@ -36,11 +49,11 @@ export type BackgroundTask = { taskId: string; taskType?: string; subagentType?:
 
 /** A session event: everything the transcript, the status bar and the notifications are drawn from. */
 export type SessionEventBody =
-  | { type: 'session_init'; sdkSessionId: string; cwd: string; model: string; mode: PermissionMode; version: string; authMode: AuthMode; tools: string[]; slashCommands: string[]; agents: string[]; skills: string[]; mcpServers: { name: string; status: string }[]; outputStyle: string; capabilities: string[]; addDirs: string[]; fastMode?: string }
+  | { type: 'session_init'; sdkSessionId: string; cwd: string; model: string; mode: PermissionMode; version: string; authMode: AuthMode; tools: string[]; slashCommands: string[]; agents: string[]; skills: string[]; mcpServers: { name: string; status: string }[]; outputStyle: string; capabilities: string[]; addDirs: string[]; fastMode?: string; provider?: 'claude' | 'nvidia'; activeShell?: string; effort?: Effort }
   | { type: 'session_state'; state: SessionState }
-  | { type: 'models'; models: { value: string; label: string; description?: string; efforts: Effort[]; fast: boolean }[] }
+  | { type: 'models'; models: { value: string; label: string; description?: string; efforts: Effort[]; fast: boolean; provider?: 'claude' | 'nvidia' }[] }
   | { type: 'sdk_state'; state: 'idle' | 'running' | 'requires_action' }
-  | { type: 'status'; compacting: boolean; mode?: PermissionMode }
+  | { type: 'status'; compacting: boolean; mode?: PermissionMode; effort?: Effort }
   | { type: 'user_message'; id: string; text: string; images?: ImageData[] }
   | { type: 'commands'; commands: { name: string; description?: string; hint?: string }[] }
   | { type: 'prompt_queued'; id: string; text: string }
@@ -101,6 +114,10 @@ export type Preflight = {
   loginCommand: string;
   /** recent projects, newest first */
   recentProjects: string[];
+  /** NVIDIA API key detected in environment */
+  hasNvidiaKey?: boolean;
+  /** Resolved shell executable path (Git Bash, pwsh, or powershell) */
+  resolvedShell?: string;
 };
 
 /** What the bridge sends outside any session. */

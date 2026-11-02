@@ -1,6 +1,6 @@
 // The UI is a projection of the session's event log (PLAN.md §4 rule 1): `reduce(view, event)` is the whole story.
 // It is a plain function so it can be tested by feeding it the recorded real sessions.
-import type { PermissionMode, Question, RateWindow, SessionEvent, SessionState } from '@ci/shared';
+import type { Effort, PermissionMode, Question, RateWindow, SessionEvent, SessionState } from '@ci/shared';
 import type { ContextView, LaneView, PermissionDecision, TodoItem, TranscriptItem } from '../model.ts';
 import { middleTruncate } from '../text.ts';
 import { describeTool, diffFor, todosFrom } from './describe.ts';
@@ -19,6 +19,8 @@ export type SessionView = {
   /** slash commands for the "/" picker and the palette */
   commands: { name: string; description?: string; hint?: string }[];
   mode: PermissionMode;
+  /** the reasoning effort, once the bridge has reported one */
+  effort?: Effort;
   items: TranscriptItem[];
   queued: { id: string; text: string }[];
   suggestion?: string;
@@ -84,11 +86,11 @@ export function reduce(view: SessionView, e: SessionEvent, instant: boolean): Se
   const flag = instant ? { instant: true } : {};
 
   switch (e.type) {
-    case 'session_init': return { ...v, init: e, mode: e.mode };
+    case 'session_init': return { ...v, init: e, mode: e.mode, effort: e.effort ?? v.effort };
     case 'models': return { ...v, models: e.models };
     case 'commands': return { ...v, commands: e.commands };
     case 'session_state': return { ...v, state: e.state, retrying: e.state === 'retrying' ? v.retrying : undefined };
-    case 'status': return e.mode ? { ...v, mode: e.mode } : v;
+    case 'status': return e.mode || e.effort ? { ...v, mode: e.mode ?? v.mode, effort: e.effort ?? v.effort } : v;
     case 'usage': return { ...v, context: { totalTokens: e.totalTokens, maxTokens: e.maxTokens } };
     case 'rate_limit': return { ...v, limits: { status: e.status, fiveHour: e.fiveHour ?? v.limits.fiveHour, sevenDay: e.sevenDay ?? v.limits.sevenDay, resetsAt: e.resetsAt } };
     case 'suggestion': return { ...v, suggestion: e.text };

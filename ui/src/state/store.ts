@@ -72,6 +72,8 @@ export type Store = {
   decidePlan(reqId: string, d: NonNullable<PlanView['decision']>, feedback?: string): void;
   setMode(mode: Extract<Command, { type: 'set_mode' }>['mode']): void;
   setModel(model: string): void;
+  setEffort(effort: Extract<Command, { type: 'set_effort' }>['effort']): void;
+  switchProvider(provider: 'claude' | 'nvidia', model?: string): void;
 };
 
 export const useStore = create<Store>()((set, get) => {
@@ -241,5 +243,7 @@ export const useStore = create<Store>()((set, get) => {
     },
     setMode: (mode) => sendTo((sessionId) => ({ type: 'set_mode', sessionId, mode })),
     setModel: (model) => sendTo((sessionId) => ({ type: 'set_model', sessionId, model })),
+    setEffort: (effort) => sendTo((sessionId) => ({ type: 'set_effort', sessionId, effort })),
+    switchProvider: (provider, model) => sendTo((sessionId) => ({ type: 'switch_provider', sessionId, provider, model })),
   };
 });

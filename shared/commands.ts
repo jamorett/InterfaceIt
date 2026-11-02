@@ -17,6 +17,7 @@ export const commandSchema = z.discriminatedUnion('type', [
     type: z.literal('start'),
     cwd: folder,
     model: z.string().max(100).optional(),
+    provider: z.enum(['claude', 'nvidia']).optional(),
     effort: z.enum(effortLevels).optional(),
     mode: mode.optional(),
     addDirs: z.array(folder).max(20).optional(),
@@ -25,6 +26,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resume'), sdkSessionId: id, cwd: folder, fork: z.boolean().optional() }),
   z.object({ type: z.literal('close'), sessionId: id }),
   z.object({ type: z.literal('replay_from'), sessionId: id, seq: z.number().int().min(0) }),
+  z.object({ type: z.literal('switch_provider'), sessionId: id, provider: z.enum(['claude', 'nvidia']), model: z.string().max(100).optional() }),
 
   z.object({
     type: z.literal('prompt'),

@@ -20,6 +20,10 @@ export class EventLog {
     return this.events.slice(Math.max(0, seq));
   }
 
+  all(): SessionEvent[] {
+    return this.events.slice();
+  }
+
   get lastSeq(): number {
     return this.events.length;
   }

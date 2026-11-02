@@ -74,7 +74,7 @@ export function createApp(deps: Deps) {
             if (!isFolder(cmd.path)) return fail('not_a_folder', 'That folder does not exist.', cmd.path);
             return deps.trust(cmd.path);
           case 'start':
-            return open(cmd.cwd, { cwd: cmd.cwd, model: cmd.model, effort: cmd.effort, mode: cmd.mode as never, addDirs: cmd.addDirs });
+            return open(cmd.cwd, { cwd: cmd.cwd, model: cmd.model, provider: cmd.provider, effort: cmd.effort, mode: cmd.mode as never, addDirs: cmd.addDirs });
           case 'resume':
             return open(cmd.cwd, { cwd: cmd.cwd, resume: { sdkSessionId: cmd.sdkSessionId, fork: cmd.fork } });
           case 'close':
@@ -82,6 +82,16 @@ export function createApp(deps: Deps) {
             subscriptions.delete(cmd.sessionId);
             return deps.manager.close(cmd.sessionId);
           case 'replay_from': return attach(cmd.sessionId, cmd.seq);
+          case 'switch_provider': {
+            if (cmd.provider === 'nvidia') {
+              const nvidiaSession = deps.manager.handoffToNvidia(cmd.sessionId, cmd.model);
+              if (nvidiaSession) attach(cmd.sessionId, 0);
+            } else if (cmd.provider === 'claude') {
+              const claudeSession = deps.manager.handoffToClaude(cmd.sessionId, cmd.model);
+              if (claudeSession) attach(cmd.sessionId, 0);
+            }
+            return;
+          }
           case 'prompt': return session(cmd.sessionId)?.prompt(cmd.text, cmd.images);
           case 'fs_search': {
             const s = session(cmd.sessionId);

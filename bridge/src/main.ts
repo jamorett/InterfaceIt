@@ -15,6 +15,15 @@ import { SessionManager } from './sessions.ts';
 import { attachWs } from './server.ts';
 import { isTrusted, trust } from './trust.ts';
 
+// Auto-load .env file if present
+if (typeof process.loadEnvFile === 'function') {
+  try {
+    process.loadEnvFile();
+  } catch {
+    // .env is optional
+  }
+}
+
 const args = new Set(process.argv.slice(2));
 const port = Number(process.env.CLAUDEINTERFACE_PORT ?? 4317);
 // the env override exists for tests only; real runs get a fresh random token
@@ -72,7 +81,7 @@ server.on('request', (req, res) => {
 });
 // --fake replays the recordings in bridge/test/fixtures instead of calling Claude: UI tests use it, so they never spend usage
 const fake = args.has('--fake');
-const fakePreflight: Preflight = { cliFound: true, cliVersion: '2.1.310', cliTooOld: false, loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'pro', loginCommand: 'claude auth login', recentProjects: ['C:/demo/ClaudeInterface', 'C:/demo/notes-site'] };
+const fakePreflight: Preflight = { cliFound: true, cliVersion: '2.1.310', cliTooOld: false, loggedIn: true, authMethod: 'claude.ai', subscriptionType: 'pro', loginCommand: 'claude auth login', recentProjects: ['C:/demo/ClaudeInterface', 'C:/demo/notes-site'], hasNvidiaKey: true, resolvedShell: 'bash' };
 const fakeTrusted = new Set<string>();
 const manager = new SessionManager(
   fake ? (spec, id) => new FixtureSession(spec.cwd, id) : (spec, id) => new SdkSession(spec, id),

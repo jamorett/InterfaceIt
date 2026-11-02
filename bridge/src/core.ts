@@ -43,15 +43,15 @@ export abstract class SessionCore implements SessionLike {
   sdkId?: string;
   protected tracker = new StateTracker();
   protected ended = false;
-  private listeners = new Set<(e: SessionEvent) => void>();
+  protected listeners = new Set<(e: SessionEvent) => void>();
   private queue: { id: string; text: string; images?: ImageData[] }[] = [];
   /** a prompt was handed to the SDK but it has not said "running" yet: a second prompt must wait */
   private starting = false;
   private pending = new Map<string, Pending>();
   private title = 'New session';
 
-  constructor(readonly id: string, readonly cwd: string) {
-    this.log = new EventLog(id);
+  constructor(readonly id: string, readonly cwd: string, log?: EventLog) {
+    this.log = log ?? new EventLog(id);
   }
 
   /** hand one prompt to whatever produces the answers */
@@ -70,6 +70,11 @@ export abstract class SessionCore implements SessionLike {
   subscribe(fn: (e: SessionEvent) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  transferListeners(target: SessionCore): void {
+    for (const l of this.listeners) target.subscribe(l);
+    this.listeners.clear();
   }
 
   /** Record events, tell the listeners, derive the status, and start the next queued prompt when the SDK goes idle. */
@@ -150,7 +155,7 @@ export abstract class SessionCore implements SessionLike {
     this.settle(reqId, { behavior: 'deny', message: 'The request was cancelled.', interrupt: true }, 'cancelled');
   }
 
-  private cancelPending() {
+  cancelPending() {
     for (const id of [...this.pending.keys()]) this.abandon(id);
   }
 

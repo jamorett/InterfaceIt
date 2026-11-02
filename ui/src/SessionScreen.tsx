@@ -1,3 +1,4 @@
+import { isNvidiaModel, nvidiaModelChoices } from '@ci/shared';
 import { useEffect, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Banner } from './components/Banner.tsx';
@@ -13,7 +14,7 @@ import { InspectorContext, type InspectorContent } from './shell/inspector.ts';
 import { LanesStrip } from './shell/LanesStrip.tsx';
 import { TodoStrip } from './shell/TodoStrip.tsx';
 import { basename } from './state/describe.ts';
-import { nextMode } from './state/modes.ts';
+import { effortsFor, nextMode } from './state/modes.ts';
 import { lanesOf, type SessionView } from './state/reduce.ts';
 import { useStore } from './state/store.ts';
 import { findMatches, toMarkdown } from './state/transcriptText.ts';
@@ -79,10 +80,33 @@ export function SessionScreen({ view }: { view: SessionView }) {
   const hottest = Math.round(Math.max(0, ...limits.map((l) => l.utilization)) * 100);
   const resets = view.limits.resetsAt ? resetsAt(view.limits.resetsAt) : '';
 
+  const isNvidia = isNvidiaModel;
+
+  const nvidiaModelsList = nvidiaModelChoices.map((m) => ({ value: m.value, label: m.label }));
+  const models = [
+    ...(view.models.length ? view.models.map((m) => ({ value: m.value, label: m.label })) : DEFAULT_MODELS),
+    ...nvidiaModelsList.filter((nm) => !view.models.some((vm) => vm.value === nm.value)),
+  ];
+
+  const handleModelChange = (val: string) => {
+    if (isNvidia(val)) {
+      act.switchProvider('nvidia', val);
+    } else if (isNvidia(view.init?.model ?? '')) {
+      act.switchProvider('claude', val);
+    } else {
+      act.setModel(val);
+    }
+  };
+
   const offline = conn !== 'ready';
-  const disabledReason = offline ? strings.composer.disabledOffline : view.state === 'rate_limited' ? strings.composer.disabledLimit : view.state === 'ended' ? strings.composer.disabledEnded : undefined;
+  const disabledReason = offline
+    ? strings.composer.disabledOffline
+    : view.state === 'rate_limited' && !isNvidia(view.init?.model ?? '')
+      ? strings.composer.disabledLimit
+      : view.state === 'ended'
+        ? strings.composer.disabledEnded
+        : undefined;
   const showWarning = view.limits.status === 'allowed_warning' && view.limits.resetsAt !== dismissedLimit;
-  const models = view.models.length ? view.models.map((m) => ({ value: m.value, label: m.label })) : DEFAULT_MODELS;
   const q = view.items.length === 0 && view.state === 'idle' && !view.crashed;
 
   const select = (id: string) => {
@@ -111,7 +135,10 @@ export function SessionScreen({ view }: { view: SessionView }) {
         model: view.init?.model ?? 'default',
         models,
         mode: view.mode,
-        onModel: act.setModel,
+        efforts: effortsFor(view.models, view.init?.model),
+        effort: view.effort,
+        onEffort: act.setEffort,
+        onModel: handleModelChange,
         onMode: act.setMode,
         status: { state: view.state, context: view.context, limits, background: view.background || undefined },
       }}
@@ -119,7 +146,19 @@ export function SessionScreen({ view }: { view: SessionView }) {
         <>
           {view.mode === 'bypassPermissions' && <Banner tone="attention">{strings.header.bypassWarning}</Banner>}
           {offline && <Banner tone="danger" live="assertive">{strings.banner.disconnected(attempt)} {strings.banner.draftKept}</Banner>}
-          {view.state === 'rate_limited' && <Banner tone="attention" live="assertive">{strings.limits.reached(resets ? `at ${resets}` : 'later')}</Banner>}
+          {view.state === 'rate_limited' && (
+            <Banner
+              tone="attention"
+              live="assertive"
+              action={
+                <Button variant="primary" onClick={() => act.switchProvider('nvidia', nvidiaModelChoices[0].value)}>
+                  {strings.nvidia.switchToFallback}
+                </Button>
+              }
+            >
+              {strings.limits.reached(resets ? `at ${resets}` : 'later')} — {strings.nvidia.limitFallbackHint}
+            </Banner>
+          )}
           {showWarning && view.limits.resetsAt !== undefined && (
             <Banner tone="attention" action={<Button variant="attention" onClick={() => act.dismissLimit(view.limits.resetsAt!)}>{strings.banner.dismiss}</Button>}>
               {strings.limits.warning(hottest, resets)}

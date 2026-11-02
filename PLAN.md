@@ -594,6 +594,16 @@ Ran 14 small sessions on `haiku` (low effort, isolated settings, scratch directo
 
 ---
 
+### 13.3 NVIDIA NIM fallback (2026-11-02, `bridge/src/nvidia/`)
+When Claude's usage limit is hit (or the user picks an NVIDIA model) the session is handed to `NvidiaSession`, which runs its own agent loop against `https://integrate.api.nvidia.com/v1` and speaks the same event contract. Key facts, measured on a real key (`npm run smoke:nvidia`, probes in `.tmp/`):
+- **The catalog lies about availability.** `GET /v1/models` lists 85 models, but a model can still answer 404 "Function not found for account" or never answer. Only models that answered a tool call are offered: the list is `nvidiaModelChoices` in `shared/events.ts` (one list for the selector and the bridge). `llama-3.3-70b-instruct` was retired (HTTP 410), `deepseek-r1` and `codestral-22b-v0.1` are gone; `bolt-e4b`, `gemma-4-31b-it` and `deepseek-v4.1-flash` hung for 100 s.
+- **No prompt caching** was seen: 3 identical 3 213-token prefixes on `nemotron-3.5-super-vl` reported `cached_tokens: 0` and flat latency. Nothing is built around it; `cached_tokens` is read and shown in the context gauge if it ever appears.
+- **Context windows** in `models.ts` are conservative guesses (the API does not report them).
+- **Permissions** mean the same in every mode and live in one place (`nvidia/permissions.ts`), used by the agent and its subagents: `auto` allows edits in the workspace and read-only commands, `plan` is read-only (+ `exit_plan`), `dontAsk` denies what is not pre-approved, bypass needs `CLAUDEINTERFACE_ALLOW_BYPASS=1`.
+- **Context management** (`nvidia/context.ts`): tool results are capped, old tool output is dropped at 60 % of the window, the old conversation is summarised at 80 %.
+- **Tools**: read/write/edit/glob/grep/bash (+ background jobs), `web_fetch` (public addresses only, asks per site), `ask_user_question`, `TodoWrite`, `load_skill`/`install_skill`, `invoke_subagent` (parallel, optional `read_only`), MCP servers over stdio (`~/.claude.json`, `.mcp.json`) and `PreToolUse`/`PostToolUse` command hooks from `settings.json`.
+- Not done: MCP over http/sse, hooks other than Pre/PostToolUse, "always allow" beyond the current session.
+
 ## 14. Build spec (for whoever implements this)
 Everything below is decided. Don't reopen it without a concrete reason found while building; if you change something, update this file in the same step.
 

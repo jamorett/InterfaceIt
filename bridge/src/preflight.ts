@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Preflight, SessionInfo } from '@ci/shared';
 import { listPast, recentFrom } from './history.ts';
+import { resolveShell } from './nvidia/tools/shellResolver.ts';
 
 const run = promisify(execFile);
 const runShell = promisify(exec);
@@ -72,6 +73,11 @@ export async function preflight(past?: SessionInfo[]): Promise<Preflight> {
   const version = bin ? parseVersion((await tryRun(bin, ['--version'])) ?? '') : undefined;
   const auth = bin ? parseAuthStatus((await tryRun(bin, ['auth', 'status', '--json'])) ?? '') : { loggedIn: false };
   const sessions = past ?? (await listPast().catch(() => []));
+  const shell = resolveShell();
+  if (!process.env.NVIDIA_API_KEY && typeof process.loadEnvFile === 'function') {
+    try { process.loadEnvFile(); } catch { /* optional */ }
+  }
+  const hasNvidiaKey = Boolean(process.env.NVIDIA_API_KEY && process.env.NVIDIA_API_KEY.trim().length > 0);
   return {
     cliFound: Boolean(bin && version),
     cliVersion: version?.join('.'),
@@ -79,5 +85,7 @@ export async function preflight(past?: SessionInfo[]): Promise<Preflight> {
     ...auth,
     loginCommand: onPath || !bundled ? 'claude auth login' : `"${bundled}" auth login`,
     recentProjects: recentFrom(sessions),
+    hasNvidiaKey,
+    resolvedShell: `${shell.type} (${shell.path})`,
   };
 }

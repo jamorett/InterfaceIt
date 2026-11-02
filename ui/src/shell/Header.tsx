@@ -1,3 +1,4 @@
+import { isNvidiaModel, type Effort } from '@ci/shared';
 import { GitBranch, Menu, MoreHorizontal, PanelRight } from 'lucide-react';
 import { IconButton } from '../components/Button.tsx';
 import { SessionBadge } from '../components/SessionBadge.tsx';
@@ -14,6 +15,10 @@ export type HeaderProps = {
   model: string;
   models: { value: string; label: string }[];
   mode: PermissionMode;
+  /** the levels the current model supports; the selector is hidden when there are none */
+  efforts?: Effort[];
+  effort?: Effort;
+  onEffort?: (effort: Effort) => void;
   onMenu?: () => void;
   onModel?: (value: string) => void;
   onMode?: (mode: PermissionMode) => void;
@@ -26,9 +31,9 @@ const modes = Object.keys(strings.mode) as PermissionMode[];
 
 function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: React.ReactNode }) {
   return (
-    <label className="flex items-center gap-1.5 text-sm text-muted">
+    <label className="flex min-w-0 items-center gap-1.5 text-sm text-muted">
       {label}
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="min-h-8 rounded-control border border-line bg-card px-2 text-base text-ink pointer-coarse:min-h-11">{children}</select>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="min-h-8 min-w-0 flex-1 rounded-control border border-line bg-card px-2 text-base text-ink pointer-coarse:min-h-11">{children}</select>
     </label>
   );
 }
@@ -36,11 +41,33 @@ function Select({ label, value, onChange, children }: { label: string; value: st
 export function Header(p: HeaderProps) {
   const tier = useTier();
   const narrow = tier === 'narrow';
+  const isNvidia = isNvidiaModel;
+  const allModels = p.models.some((m) => m.value === p.model) ? p.models : [{ value: p.model, label: p.model }, ...p.models];
+  const claudeGroup = allModels.filter((m) => !isNvidia(m.value));
+  const nvidiaGroup = allModels.filter((m) => isNvidia(m.value));
+
   const controls = (
     <>
       <Select label={strings.header.model} value={p.model} onChange={(v) => p.onModel?.(v)}>
-        {(p.models.some((m) => m.value === p.model) ? p.models : [{ value: p.model, label: p.model }, ...p.models]).map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+        {claudeGroup.length > 0 && nvidiaGroup.length > 0 ? (
+          <>
+            <optgroup label={strings.nvidia.claudeGroup}>
+              {claudeGroup.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </optgroup>
+            <optgroup label={strings.nvidia.nvidiaGroup}>
+              {nvidiaGroup.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </optgroup>
+          </>
+        ) : (
+          allModels.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)
+        )}
       </Select>
+      {p.efforts && p.efforts.length > 0 && (
+        <Select label={strings.header.effort} value={p.effort ?? ''} onChange={(v) => p.onEffort?.(v as Effort)}>
+          {p.effort === undefined && <option value="" disabled>{strings.header.effortUnset}</option>}
+          {p.efforts.map((e) => <option key={e} value={e}>{strings.effort[e]}</option>)}
+        </Select>
+      )}
       <Select label={strings.header.permissions} value={p.mode} onChange={(v) => p.onMode?.(v as PermissionMode)}>
         {modes.map((m) => <option key={m} value={m}>{strings.mode[m]}</option>)}
       </Select>

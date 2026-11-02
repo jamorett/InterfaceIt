@@ -335,7 +335,7 @@ test.describe('what a change looks like in a live session', () => {
     await page.getByRole('alert', { name: /Needs your OK: Edit/ }).getByRole('button', { name: 'Allow', exact: true }).click();
     await idle(page);
     await page.getByRole('button', { name: /^Read .*hello\.txt/ }).click();
-    await expect(page.getByLabel('Code').first()).toContainText('hello world');
+    await expect(page.getByLabel('Code', { exact: true }).first()).toContainText('hello world');
   });
 });
 
