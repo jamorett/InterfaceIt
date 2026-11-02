@@ -95,7 +95,7 @@ export class SessionManager {
     this.sessions.set(id, nvidia);
 
     // Announce the transition in transcript
-    nvidia.announceNotice(`Session switched to NVIDIA NIM fallback (${model}).`);
+    nvidia.announceNotice(`Session switched to Polar, the NVIDIA NIM fallback (${model}).`);
 
     return nvidia;
   }

@@ -206,3 +206,14 @@ export const richToolsTranscript: TranscriptItem[] = [
   { kind: 'tool', tool: { id: 'r6', name: 'Bash', target: 'cat huge.log', status: 'ok', output: 'log line\n'.repeat(40), truncatedBytes: 4_300_000 } },
   { kind: 'assistant', id: 'r7', text: 'Here is a snippet:\n\n```ts\nconst answer: number = 42; // the answer\n```' },
 ];
+
+/** Two agents working at once: each one's calls are inside its own card, one still running. */
+export const subagentTranscript: TranscriptItem[] = [
+  user,
+  { kind: 'tool', tool: { id: 'a1', name: 'Task', target: 'Build the keypad', status: 'ok', elapsedSec: 41, output: 'Keypad done.\n\n[Files modified by this subagent: src/Keypad.tsx]', input: { description: 'Build the keypad', prompt: 'p' } } },
+  { kind: 'tool', tool: { id: 'a1r', name: 'Read', target: 'src/App.tsx', status: 'ok', elapsedSec: 0.2, depth: 1, parentId: 'a1', output: '     1→export default function App() {}' } },
+  { kind: 'tool', tool: { id: 'a1w', name: 'Write', target: 'src/Keypad.tsx', status: 'ok', elapsedSec: 0.4, depth: 1, parentId: 'a1', output: 'Successfully wrote 120 bytes', input: { file_path: 'src/Keypad.tsx', content: 'export const Keypad = () => null;\n' } } },
+  { kind: 'tool', tool: { id: 'a2', name: 'Task', target: 'Write the math engine', status: 'running', elapsedSec: 12, input: { description: 'Write the math engine', prompt: 'p' } } },
+  { kind: 'tool', tool: { id: 'a2e', name: 'Edit', target: 'src/math.ts', status: 'ok', elapsedSec: 0.3, depth: 1, parentId: 'a2', output: 'updated', input: { file_path: 'src/math.ts', old_string: 'return 0;', new_string: 'return evaluate(tokens);' } } },
+  { kind: 'tool', tool: { id: 'a2b', name: 'Bash', target: 'npx vitest run', status: 'running', elapsedSec: 4, depth: 1, parentId: 'a2' } },
+];

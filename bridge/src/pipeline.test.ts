@@ -91,6 +91,42 @@ describe('subagents', () => {
     expect(v.background).toBe(0);
     expect(tools(v).map((t) => t.name)).toContain('Agent');
   });
+
+  it('keeps what the real subagent said, found through the tool call that started it', () => {
+    const lane = lanesOf(v)[0]!;
+    expect(lane.toolUseId).toBeTruthy();
+    const log = v.laneLogs[lane.toolUseId!] ?? [];
+    expect(log.length).toBeGreaterThan(0);
+    expect(log.some((e) => e.kind === 'text' && e.text.length > 0)).toBe(true);
+  });
+
+  it('logs a subagent\'s words, thinking and tools as they stream, and nests its tool cards', () => {
+    let view = initialView('s', '/proj');
+    let seq = 0;
+    const feed = (b: SessionEventBody) => { view = reduce(view, { ...b, seq: ++seq, ts: seq * 1000 } as never, false); };
+    feed({ type: 'tool_start', id: 'task1', name: 'Task' });
+    feed({ type: 'task', taskId: 't1', toolUseId: 'task1', subagentType: 'Builder', description: 'build it', state: 'running' });
+    feed({ type: 'block_start', blockId: 'th', kind: 'thinking', parentId: 'task1' });
+    feed({ type: 'thinking_delta', blockId: 'th', text: 'plan ' });
+    feed({ type: 'thinking_delta', blockId: 'th', text: 'it' });
+    feed({ type: 'block_end', blockId: 'th' });
+    feed({ type: 'block_start', blockId: 'tx', kind: 'text', parentId: 'task1' });
+    feed({ type: 'text_delta', blockId: 'tx', text: 'writing ' });
+    feed({ type: 'text_delta', blockId: 'tx', text: 'the file' });
+    feed({ type: 'tool_start', id: 'inner', name: 'Write', parentId: 'task1' });
+    feed({ type: 'tool_input', id: 'inner', input: { file_path: 'a.ts', content: 'x' } });
+    feed({ type: 'tool_end', id: 'inner', result: { text: 'wrote it', images: 0 }, isError: false, parentId: 'task1' });
+
+    expect(view.laneLogs.task1).toEqual([
+      { kind: 'thinking', id: 'th', text: 'plan it' },
+      { kind: 'text', id: 'tx', text: 'writing the file' },
+      { kind: 'tool', id: 'inner', name: 'Write', target: 'a.ts', status: 'ok', output: 'wrote it' },
+    ]);
+    // the subagent's words stay out of the main conversation, its tool card is nested one level under the Task card
+    expect(view.items.some((i) => i.kind === 'assistant')).toBe(false);
+    expect(tools(view).find((t) => t.id === 'inner')).toMatchObject({ depth: 1, status: 'ok' });
+    expect(lanesOf(view)[0]).toMatchObject({ toolUseId: 'task1', type: 'Builder' });
+  });
 });
 
 describe('queued prompts run one after the other', () => {

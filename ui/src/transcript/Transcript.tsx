@@ -5,7 +5,7 @@ import { PermissionCard } from '../cards/PermissionCard.tsx';
 import { PlanReview } from '../cards/PlanReview.tsx';
 import { QuestionCard } from '../cards/QuestionCard.tsx';
 import { ToolCard } from '../cards/ToolCard.tsx';
-import type { PermissionDecision, PlanView, TranscriptItem } from '../model.ts';
+import type { PermissionDecision, PlanView, ToolView, TranscriptItem } from '../model.ts';
 import { imageSrc } from '../state/describe.ts';
 import { strings } from '../strings.ts';
 import { formatTokens } from '../text.ts';
@@ -25,7 +25,9 @@ export type Handlers = {
   onPlan?: (id: string, decision: NonNullable<PlanView['decision']>, feedback?: string) => void;
 };
 
-function Item({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: Handlers }) {
+type Kids = Map<string, ToolView[]>;
+
+function Item({ item, debug, on, childrenOf }: { item: TranscriptItem; debug: boolean; on: Handlers; childrenOf?: Kids }) {
   switch (item.kind) {
     case 'user':
       return (
@@ -52,7 +54,7 @@ function Item({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: H
         </p>
       );
     case 'tool':
-      return <ToolCard tool={item.tool} onFull={on.onFull} />;
+      return <ToolCard tool={item.tool} onFull={on.onFull} childrenOf={childrenOf} />;
     case 'permission':
       return <PermissionCard view={item.view} onDecide={(d, r, ed) => on.onPermission?.(item.view.id, d, r, ed)} />;
     case 'question':
@@ -90,16 +92,46 @@ function Item({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: H
   }
 }
 
+/**
+ * What is drawn as a row of the list. A tool call made by an agent (it has a `parentId` whose card is in the list) is not a row of its
+ * own: it is drawn inside that agent's card. `items` keeps its flat order, so search and Alt+↑/↓ keep using positions in it;
+ * `rowFor` turns such a position into the row that shows it.
+ */
+export function groupRows(items: TranscriptItem[]) {
+  const indexOfTool = new Map<string, number>();
+  items.forEach((it, i) => { if (it.kind === 'tool') indexOfTool.set(it.tool.id, i); });
+  const childrenOf = new Map<string, ToolView[]>();
+  const rows: { index: number; item: TranscriptItem }[] = [];
+  const rowAt = new Map<number, number>();
+  items.forEach((item, index) => {
+    const parent = item.kind === 'tool' ? item.tool.parentId : undefined;
+    if (item.kind === 'tool' && parent && indexOfTool.has(parent)) childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), item.tool]);
+    else { rowAt.set(index, rows.length); rows.push({ index, item }); }
+  });
+  const rowFor = (index: number): number => {
+    for (let i = index, hops = 0; hops < 8; hops++) {
+      const row = rowAt.get(i);
+      if (row !== undefined) return row;
+      const it = items[i];
+      const up = it?.kind === 'tool' && it.tool.parentId ? indexOfTool.get(it.tool.parentId) : undefined;
+      if (up === undefined) break;
+      i = up;
+    }
+    return 0;
+  };
+  return { rows, childrenOf, rowFor };
+}
+
 /** positions of the cards that still wait for an answer */
 export function waitingIndexes(items: TranscriptItem[]): number[] {
   return items.flatMap((it, i) =>
     (it.kind === 'permission' && !it.view.decision) || (it.kind === 'question' && !it.view.answer) || (it.kind === 'plan' && !it.view.decision) ? [i] : []);
 }
 
-function Card({ item, debug, on }: { item: TranscriptItem; debug: boolean; on: Handlers }) {
+function Card({ item, debug, on, childrenOf }: { item: TranscriptItem; debug: boolean; on: Handlers; childrenOf?: Kids }) {
   return (
     <CardBoundary raw={item}>
-      <Item item={item} debug={debug} on={on} />
+      <Item item={item} debug={debug} on={on} childrenOf={childrenOf} />
     </CardBoundary>
   );
 }
@@ -131,9 +163,11 @@ export function Transcript({ items, debug = false, announce, on = {}, focusItem,
     seen.current = items.length;
   }, [items.length, atBottom]);
 
+  const { rows, childrenOf, rowFor } = useMemo(() => groupRows(items), [items]);
+
   useEffect(() => {
-    if (focusItem) list.current?.scrollToIndex({ index: focusItem.index, align: 'center' });
-  }, [focusItem]);
+    if (focusItem) list.current?.scrollToIndex({ index: rowFor(focusItem.index), align: 'center' });
+  }, [focusItem, rowFor]);
 
   const live = <div className="sr-only" aria-live="polite">{announce}</div>; // once per finished block, never per token (PLAN.md §9.3)
 
@@ -149,7 +183,7 @@ export function Transcript({ items, debug = false, announce, on = {}, focusItem,
       const down = e.key === 'ArrowDown';
       at.current = down ? Math.min(at.current + 1, waiting.length - 1) : at.current < 0 ? waiting.length - 1 : Math.max(at.current - 1, 0);
       const index = waiting[at.current]!;
-      list.current?.scrollToIndex({ index, align: 'center' });
+      list.current?.scrollToIndex({ index: rowFor(index), align: 'center' });
       const focus = () => {
         const card = root.current?.querySelector(`[data-item-index="${index}"]`);
         const target = card?.querySelector<HTMLElement>('[role="alert"][tabindex], [role="alert"] input, [role="alert"] button');
@@ -160,13 +194,13 @@ export function Transcript({ items, debug = false, announce, on = {}, focusItem,
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [waiting, virtualize]);
+  }, [waiting, virtualize, rowFor]);
 
   if (!virtualize) {
     return (
       <div ref={root} role="log" aria-label={strings.transcript.region} aria-live="off" tabIndex={0} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-[780px] flex-col gap-3 px-6 py-4">
-          {items.map((item, i) => <div key={keyOf(item)} data-item-index={i}><Card item={item} debug={debug} on={on} /></div>)}
+          {rows.map(({ item, index }) => <div key={keyOf(item)} data-item-index={index}><Card item={item} debug={debug} on={on} childrenOf={childrenOf} /></div>)}
         </div>
         {live}
       </div>
@@ -178,15 +212,15 @@ export function Transcript({ items, debug = false, announce, on = {}, focusItem,
       <Virtuoso
         ref={list}
         className="h-full"
-        data={items}
-        computeItemKey={(_, item) => keyOf(item)}
-        initialTopMostItemIndex={Math.max(items.length - 1, 0)}
+        data={rows}
+        computeItemKey={(_, row) => keyOf(row.item)}
+        initialTopMostItemIndex={Math.max(rows.length - 1, 0)}
         followOutput={(bottom) => (bottom ? 'auto' : false)}
         atBottomStateChange={(b) => { setAtBottom(b); if (b) setUnseen(0); }}
         increaseViewportBy={300}
-        itemContent={(i, item) => (
-          <div data-item-index={i} className={`mx-auto w-full max-w-[780px] px-6 py-1.5 ${focusItem?.index === i ? 'outline-2 -outline-offset-2 outline-accent' : ''}`}>
-            <Card item={item} debug={debug} on={on} />
+        itemContent={(i, { item, index }) => (
+          <div data-item-index={index} className={`mx-auto w-full max-w-[780px] px-6 py-1.5 ${focusItem && rowFor(focusItem.index) === i ? 'outline-2 -outline-offset-2 outline-accent' : ''}`}>
+            <Card item={item} debug={debug} on={on} childrenOf={childrenOf} />
           </div>
         )}
       />

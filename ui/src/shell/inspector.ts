@@ -6,6 +6,8 @@ export type InspectorContent =
   | { kind: 'diff'; title: string; path: string; lines: DiffLine[] }
   | { kind: 'output'; title: string; text: string }
   | { kind: 'code'; title: string; code: string; language?: string }
-  | { kind: 'image'; title: string; src: string };
+  | { kind: 'image'; title: string; src: string }
+  /** a subagent's live log; only its id travels, the panel reads the latest state from the session */
+  | { kind: 'lane'; title: string; laneId: string };
 
 export const InspectorContext = createContext<(content: InspectorContent) => void>(() => {});

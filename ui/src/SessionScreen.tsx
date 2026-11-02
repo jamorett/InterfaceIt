@@ -119,7 +119,7 @@ export function SessionScreen({ view }: { view: SessionView }) {
   return (
     <InspectorContext.Provider value={openPanel}>
     <AppShell
-      inspector={panel ? <InspectorBody content={panel} /> : undefined}
+      inspector={panel ? <InspectorBody content={panel} view={view} /> : undefined}
       inspectorTitle={panel?.title}
       openInspectorSignal={panelSignal}
       sessions={[...live, ...stored]}
@@ -137,6 +137,7 @@ export function SessionScreen({ view }: { view: SessionView }) {
         mode: view.mode,
         efforts: effortsFor(view.models, view.init?.model),
         effort: view.effort,
+        thinkingOff: view.thinking === false,
         onEffort: act.setEffort,
         onModel: handleModelChange,
         onMode: act.setMode,

@@ -1,4 +1,4 @@
-import { Bot, Check, ChevronRight, FileText, Globe, LoaderCircle, PanelRight, Pencil, Search, Terminal, Wrench, X, type LucideIcon } from 'lucide-react';
+import { Bot, Camera, Check, ChevronRight, Eye, FileText, Globe, LoaderCircle, PanelRight, Pencil, ScanSearch, Search, Terminal, Wrench, X, type LucideIcon } from 'lucide-react';
 import { useContext, useMemo, useState } from 'react';
 import { AnsiText } from '../components/AnsiText.tsx';
 import { IconButton } from '../components/Button.tsx';
@@ -7,6 +7,7 @@ import { DiffView } from '../components/DiffView.tsx';
 import type { ToolView } from '../model.ts';
 import { InspectorContext } from '../shell/inspector.ts';
 import { diffFor, imageSrc, readPreview } from '../state/describe.ts';
+import { countChanges } from '../state/diff.ts';
 import { strings } from '../strings.ts';
 import { middleTruncate } from '../text.ts';
 
@@ -17,6 +18,7 @@ const icons: Record<string, LucideIcon> = {
   Grep: Search, Glob: Search, ToolSearch: Search,
   WebFetch: Globe, WebSearch: Globe,
   Agent: Bot, Task: Bot,
+  analyze_image: Eye, detect_objects: ScanSearch, screenshot: Camera, // the fallback's vision tools
 };
 
 const MAX_INDENT = 3;
@@ -24,9 +26,12 @@ const INLINE_DIFF_LINES = 80;
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
 
-export function ToolCard({ tool, onFull }: { tool: ToolView; onFull?: (toolId: string) => void }) {
+export function ToolCard({ tool, onFull, childrenOf, nested }: { tool: ToolView; onFull?: (toolId: string) => void; childrenOf?: Map<string, ToolView[]>; nested?: boolean }) {
   const failed = tool.status === 'error';
-  const [open, setOpen] = useState(failed); // a failure stays open so it can't be missed
+  // the calls an agent made are drawn inside its card; while it works the card is open so you see them arrive
+  const kids = childrenOf?.get(tool.id) ?? [];
+  const [manual, setManual] = useState<boolean | undefined>();
+  const open = manual ?? (failed || (kids.length > 0 && tool.status === 'running')); // a failure stays open so it can't be missed
   const openPanel = useContext(InspectorContext);
   const Icon = icons[tool.name] ?? Wrench;
   const bodyId = `tool-${tool.id}`;
@@ -35,6 +40,7 @@ export function ToolCard({ tool, onFull }: { tool: ToolView; onFull?: (toolId: s
   // what the card can show beyond its one line: the change an Edit/Write makes, a Read as code, or the raw output
   const diff = useMemo(() => (isRecord(tool.input) ? diffFor(tool.name, tool.input, 400) : undefined), [tool.name, tool.input]);
   const read = useMemo(() => (tool.name === 'Read' && tool.output ? readPreview(tool.output, tool.target) : undefined), [tool.name, tool.output, tool.target]);
+  const changes = useMemo(() => (diff ? countChanges(diff) : undefined), [diff]);
   const images = (tool.images ?? []).flatMap((im) => { const src = imageSrc(im); return src ? [src] : []; });
   const title = `${tool.name} ${tool.target}`.trim();
 
@@ -46,7 +52,7 @@ export function ToolCard({ tool, onFull }: { tool: ToolView; onFull?: (toolId: s
   return (
     <div
       data-instant={tool.instant ? '' : undefined}
-      style={{ marginLeft: Math.min(tool.depth ?? 0, MAX_INDENT) * 16 }}
+      style={{ marginLeft: nested ? 0 : Math.min(tool.depth ?? 0, MAX_INDENT) * 16 }}
       className={`enter @container rounded-card border bg-card shadow-card ${failed ? 'shake-once border-danger border-l-4' : 'border-line'}`}
     >
       <div className="flex items-center">
@@ -54,13 +60,18 @@ export function ToolCard({ tool, onFull }: { tool: ToolView; onFull?: (toolId: s
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => setManual(!open)}
           className="press hoverable flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-card px-3 py-1.5 text-left text-base pointer-coarse:min-h-11"
         >
           <ChevronRight aria-hidden className={`size-3.5 shrink-0 text-muted transition-transform duration-[var(--dur-instant)] ${open ? 'rotate-90' : ''}`} />
           <Icon aria-hidden className="size-4 shrink-0 text-muted" />
           <span className="font-medium">{tool.name}</span>
           <span className="min-w-0 flex-1 truncate font-mono text-sm text-muted" title={tool.target}>{middleTruncate(tool.target, 64)}</span>
+          {changes && (
+            <span className="shrink-0 text-sm tabular-nums">
+              <span className="text-accent">{strings.diff.added(changes.added)}</span> <span className="text-danger">{strings.diff.removed(changes.removed)}</span>
+            </span>
+          )}
           {tool.elapsedSec !== undefined && <span className="hidden text-sm text-muted tabular-nums @md:inline">{strings.tool.elapsed(tool.elapsedSec)}</span>}
           <span className={`inline-flex shrink-0 items-center gap-1 text-sm ${failed ? 'text-danger' : tool.status === 'ok' ? 'text-accent' : 'text-muted'}`}>
             {tool.status === 'running' && <LoaderCircle aria-hidden className="spin size-4" />}
@@ -75,6 +86,11 @@ export function ToolCard({ tool, onFull }: { tool: ToolView; onFull?: (toolId: s
       </div>
       {open && (
         <div id={bodyId} className="enter border-t border-line p-3">
+          {kids.length > 0 && (
+            <div role="group" aria-label={strings.lanes.work} className="mb-2 grid gap-2">
+              {kids.map((k) => <ToolCard key={k.id} tool={k} nested childrenOf={childrenOf} onFull={onFull} />)}
+            </div>
+          )}
           {diff && <DiffView lines={diff.slice(0, INLINE_DIFF_LINES)} label={strings.diff.preview} className="max-h-64" />}
           {!diff && read && <CodeBlock code={read.code} language={read.language} className="!my-0" />}
           {!diff && !read && (tool.output === undefined ? (

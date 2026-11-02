@@ -343,13 +343,15 @@ test.describe('finding and the palette', () => {
   test('Ctrl+K runs a palette action, and Ctrl+F steps through matches', async ({ page }) => {
     await start(page);
     await say(page, '[[basic]] hello');
+    // the whole answer first: the search counts cards, and "hello" is also in the Read card, so searching while it still streams gave a changing count
+    await expect(page.getByText(/Steps 1 and 2 are done/).first()).toBeVisible();
     await idle(page);
     await page.keyboard.press('Control+k');
     await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
     await page.keyboard.type('find');
     await page.keyboard.press('Enter');
     await expect(page.getByRole('search')).toBeVisible();
-    await page.getByLabel('Find in conversation').fill('hello');
+    await page.getByLabel('Find in conversation').fill('Steps 1 and 2'); // only the final answer says this
     await expect(page.getByRole('search').getByRole('status')).toHaveText('1 of 1');
     await page.keyboard.press('Escape');
     await expect(page.getByRole('search')).toHaveCount(0);
@@ -364,5 +366,18 @@ test.describe('finding and the palette', () => {
     const download = page.waitForEvent('download');
     await page.keyboard.press('Enter');
     expect((await download).suggestedFilename()).toMatch(/\.md$/);
+  });
+});
+
+test.describe('a subagent can be opened and watched', () => {
+  test('its pill opens a panel with what the agent said and did', async ({ page }) => {
+    await start(page);
+    await say(page, '[[subagent]] compute 2+2 with a subagent');
+    await idle(page);
+    const pill = page.getByRole('list', { name: 'Subagents' }).getByRole('button', { name: /general-purpose/ });
+    await expect(pill).toBeVisible();
+    await pill.click();
+    await expect(page.getByRole('list', { name: 'What this agent did' })).toContainText('4');
+    expect(await offscreen(page)).toEqual([]);
   });
 });

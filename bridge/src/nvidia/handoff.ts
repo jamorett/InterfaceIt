@@ -18,6 +18,8 @@ export function toNimCall(name: string, input: unknown): { name: string; input: 
     case 'Write': return { name: 'write_file', input: { path: s(i.file_path), content: s(i.content) } };
     case 'Edit': return { name: 'edit_file', input: { path: s(i.file_path), old_string: s(i.old_string), new_string: s(i.new_string), ...(i.replace_all === true && { replace_all: true }) } };
     case 'Bash': return { name: 'bash', input: { command: s(i.command), ...(n(i.timeout) !== undefined && { timeoutMs: n(i.timeout) }) } };
+    case 'WebFetch': return { name: 'web_fetch', input: { url: s(i.url) } };
+    case 'Task': case 'Agent': return { name: 'invoke_subagent', input: { role: s(i.subagent_type) ?? s(i.role) ?? 'Agent', description: s(i.description), prompt: s(i.prompt) } };
     case 'Glob': return { name: 'glob', input: { pattern: s(i.pattern), ...(s(i.path) && { path: s(i.path) }) } };
     case 'Grep': return { name: 'grep', input: { query: s(i.pattern), is_regex: true, ...(s(i.path) && { path: s(i.path) }) } };
     default: return { name, input };
@@ -36,6 +38,8 @@ export function eventsToOpenAiMessages(
   let inAssistantBlock = false;
   const toolInputMap = new Map<string, unknown>();
   const toolNameMap = new Map<string, string>();
+  const subBlocks = new Set<string>();
+  const subTools = new Set<string>();
 
   for (const e of events) {
     switch (e.type) {
@@ -61,11 +65,13 @@ export function eventsToOpenAiMessages(
       }
 
       case 'block_start': {
+        if (e.parentId) { subBlocks.add(e.blockId); break; } // a subagent's own words are not the assistant's
         if (e.kind === 'text') inAssistantBlock = true;
         break;
       }
 
       case 'text_delta': {
+        if (subBlocks.has(e.blockId)) break;
         currentAssistantText += e.text;
         break;
       }
@@ -76,16 +82,19 @@ export function eventsToOpenAiMessages(
       }
 
       case 'tool_start': {
+        if (e.parentId) { subTools.add(e.id); break; } // inside a subagent: the lead only ever saw the subagent's final report
         toolNameMap.set(e.id, e.name);
         break;
       }
 
       case 'tool_input': {
+        if (subTools.has(e.id)) break;
         toolInputMap.set(e.id, e.input);
         break;
       }
 
       case 'tool_end': {
+        if (e.parentId || subTools.has(e.id)) break;
         const { name, input } = toNimCall(toolNameMap.get(e.id) ?? 'unknown', toolInputMap.get(e.id) ?? {});
         const callObj: OpenAiToolCall = {
           id: e.id,

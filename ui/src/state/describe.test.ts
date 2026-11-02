@@ -32,6 +32,11 @@ describe('diffFor', () => {
       { kind: 'del', text: 'hello', oldNo: 1 }, { kind: 'add', text: 'goodbye', newNo: 1 }, { kind: 'add', text: 'world', newNo: 2 },
     ]);
   });
+  it('shows an overwrite as what was erased and what was added, when the old content is sent', () => {
+    const d = diffFor('Write', { content: 'a\nB\nc', old_content: 'a\nb\nc' })!;
+    expect(d.filter((l) => l.kind === 'del').map((l) => l.text)).toEqual(['b']);
+    expect(d.filter((l) => l.kind === 'add').map((l) => l.text)).toEqual(['B']);
+  });
   it('shows a new file as added lines and cuts a long one', () => {
     const d = diffFor('Write', { content: Array.from({ length: 100 }, (_, i) => `l${i}`).join('\r\n') })!;
     expect(d).toHaveLength(41);

@@ -26,6 +26,8 @@ export interface StreamCallbacks {
   onReasoning?: (delta: string) => void;
   onContent?: (delta: string) => void;
   onToolCall?: (toolCall: OpenAiToolCall) => void;
+  /** the request failed in a way worth retrying and will be sent again after `delayMs` */
+  onRetry?: (r: { attempt: number; maxRetries: number; delayMs: number; status: number | null; error: string }) => void;
 }
 
 export interface CompletionRequest {
@@ -37,7 +39,10 @@ export interface CompletionRequest {
   max_tokens?: number;
   reasoningBudget?: number;
   seed?: number;
+  /** true / false is sent as chat_template_kwargs.enable_thinking; undefined leaves it to the model (which thinks by default) */
   enableThinking?: boolean;
+  /** more chat_template_kwargs a model needs (Ultra: force_nonempty_content, medium_effort) */
+  templateKwargs?: Record<string, unknown>;
   signal?: AbortSignal;
 }
 
@@ -94,7 +99,25 @@ export class NvidiaClient {
     return Boolean(this.apiKey && this.apiKey.trim().length > 0);
   }
 
+  /**
+   * One request, sent again (twice at most) when the model accepted it but never produced anything, either no response at all or
+   * a queue that only sends keep-alives: nothing had been shown yet, so sending it again is safe.
+   */
   async streamChat(
+    req: CompletionRequest,
+    callbacks: StreamCallbacks
+  ): Promise<{ text: string; reasoning: string; toolCalls: OpenAiToolCall[]; usage?: { promptTokens: number; completionTokens: number; /** undefined when the API does not report caching */ cachedTokens?: number }; finishReason?: string }> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.streamOnce(req, callbacks);
+      } catch (e) {
+        if (!(e instanceof SilentStream) || req.signal?.aborted || attempt > SILENT_RETRIES) throw e;
+        callbacks.onRetry?.({ attempt, maxRetries: SILENT_RETRIES, delayMs: 0, status: null, error: e.message });
+      }
+    }
+  }
+
+  private async streamOnce(
     req: CompletionRequest,
     callbacks: StreamCallbacks
   ): Promise<{ text: string; reasoning: string; toolCalls: OpenAiToolCall[]; usage?: { promptTokens: number; completionTokens: number; /** undefined when the API does not report caching */ cachedTokens?: number }; finishReason?: string }> {
@@ -120,16 +143,14 @@ export class NvidiaClient {
       body.parallel_tool_calls = true;
     }
 
-    if (req.enableThinking) {
-      body.chat_template_kwargs = { enable_thinking: true };
-      if (req.reasoningBudget) {
-        body.reasoning_budget = req.reasoningBudget;
-      }
-    }
+    const kwargs: Record<string, unknown> = { ...req.templateKwargs };
+    if (req.enableThinking !== undefined) kwargs.enable_thinking = req.enableThinking; // false really switches thinking off
+    if (Object.keys(kwargs).length > 0) body.chat_template_kwargs = kwargs;
+    if (req.enableThinking && req.reasoningBudget) body.reasoning_budget = req.reasoningBudget;
 
     body.stream_options = { include_usage: true };
 
-    const res = await this.connect(JSON.stringify(body), req.signal);
+    const res = await this.connect(JSON.stringify(body), req.signal, callbacks.onRetry);
     if (!res.body) {
       throw new Error('No response body returned from NVIDIA API stream.');
     }
@@ -143,9 +164,18 @@ export class NvidiaClient {
     let buffer = '';
     let usage: { promptTokens: number; completionTokens: number; cachedTokens?: number } | undefined;
     let finishReason: string | undefined;
+    // the clock only runs on real data: keep-alive comments arrive while a request waits in a queue and must not keep it alive forever
+    let lastData = Date.now();
+    let sawData = false;
 
     while (true) {
-      const { done, value } = await readOrStall(reader);
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await readOrStall(reader);
+      } catch (e) {
+        throw sawData ? e : new SilentStream(e instanceof Error ? e.message : String(e));
+      }
+      const { done, value } = chunk;
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
@@ -158,6 +188,8 @@ export class NvidiaClient {
         if (trimmed === 'data: [DONE]') continue;
 
         if (trimmed.startsWith('data: ')) {
+          lastData = Date.now();
+          sawData = true;
           const jsonStr = trimmed.slice(6);
           try {
             const data = JSON.parse(jsonStr) as {
@@ -218,6 +250,13 @@ export class NvidiaClient {
           }
         }
       }
+
+      // chunks keep arriving but none carries content: only keep-alives. Give up instead of waiting for ever.
+      if (Date.now() - lastData > STALL_MS) {
+        void reader.cancel().catch(() => undefined);
+        const why = 'NVIDIA sent no content for 2 minutes (only keep-alive signals): the model may be overloaded.';
+        throw sawData ? new Error(why) : new SilentStream(why);
+      }
     }
 
     const finalToolCalls: OpenAiToolCall[] = [];
@@ -245,8 +284,23 @@ export class NvidiaClient {
     };
   }
 
+  /** A single JSON request to one of NVIDIA's other endpoints (vision/CV models), with the same key and clear errors. */
+  async postJson(url: string, body: unknown, signal?: AbortSignal, timeoutMs = 90_000): Promise<unknown> {
+    if (!this.apiKey) throw new Error('NVIDIA_API_KEY environment variable is not set. Please set it before using the NVIDIA fallback.');
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${this.apiKey.trim()}` },
+      body: JSON.stringify(body),
+      signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(timeoutMs)]),
+    });
+    const text = await res.text();
+    if (res.status === 404 || res.status === 410) throw new Error(`That model is not available to your NVIDIA account (HTTP ${res.status}). ${text.slice(0, 160)}`);
+    if (!res.ok) throw new Error(`NVIDIA API HTTP ${res.status}: ${text.slice(0, 300)}`);
+    return JSON.parse(text);
+  }
+
   /** POST with a few retries for what is worth retrying (network errors, 429, 5xx); a Stop or a 4xx fails at once. */
-  private async connect(body: string, signal?: AbortSignal): Promise<Response> {
+  private async connect(body: string, signal: AbortSignal | undefined, onRetry: StreamCallbacks['onRetry']): Promise<Response> {
     for (let attempt = 0; ; attempt++) {
       let res: Response;
       // some models accept the request and never answer: give up waiting for the response headers after a while
@@ -263,9 +317,11 @@ export class NvidiaClient {
           signal: ctl.signal,
         });
       } catch (e) {
-        if (timedOut) throw new Error(`NVIDIA did not answer within ${HEADERS_MS / 1000}s. That model may be overloaded or unavailable: try another one.`);
+        if (timedOut) throw new SilentStream(`NVIDIA did not answer within ${HEADERS_MS / 1000}s. That model may be overloaded or unavailable: try another one.`);
         if (signal?.aborted || attempt >= MAX_RETRIES) throw e;
-        await sleep(backoff(attempt), signal);
+        const delayMs = backoff(attempt);
+        onRetry?.({ attempt: attempt + 1, maxRetries: MAX_RETRIES, delayMs, status: null, error: e instanceof Error ? e.message : String(e) });
+        await sleep(delayMs, signal);
         continue;
       } finally {
         clearTimeout(timer);
@@ -280,16 +336,23 @@ export class NvidiaClient {
         throw new Error(`NVIDIA API HTTP ${res.status} error: ${errText}`);
       }
       const wait = Number(res.headers.get('retry-after'));
+      const delayMs = wait > 0 ? Math.min(wait * 1000, 30_000) : backoff(attempt);
+      onRetry?.({ attempt: attempt + 1, maxRetries: MAX_RETRIES, delayMs, status: res.status, error: res.statusText || `HTTP ${res.status}` });
       await res.body?.cancel().catch(() => undefined);
-      await sleep(wait > 0 ? Math.min(wait * 1000, 30_000) : backoff(attempt), signal);
+      await sleep(delayMs, signal);
     }
   }
 }
 
 const MAX_RETRIES = 3;
 const HEADERS_MS = 90_000;
+/** extra tries for a request the model accepted and never answered */
+const SILENT_RETRIES = 2;
 /** reasoning models can think a long while before the first token, so this is generous */
 const STALL_MS = 120_000;
+
+/** The model took the request and never produced anything: safe to send again, because nothing was shown. */
+class SilentStream extends Error {}
 
 const backoff = (attempt: number) => 1000 * 2 ** attempt + Math.random() * 300;
 

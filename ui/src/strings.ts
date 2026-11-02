@@ -42,6 +42,8 @@ export const strings = {
     permissions: 'Permissions',
     effort: 'Effort',
     effortUnset: 'Default',
+    thinkingOff: 'Thinking off',
+    thinkingOffHint: 'The agent switched its reasoning off for simple work; it turns it back on for hard problems.',
     inspector: 'Toggle inspector',
     theme: (t: 'light' | 'dark' | 'system') => `Theme: ${t} (click to change)`,
     bypassWarning: 'Permissions are off: Claude can change files and run commands without asking.',
@@ -130,10 +132,17 @@ export const strings = {
   },
 
   lanes: {
+    work: 'Work done by this agent',
     region: 'Subagents',
     more: (n: number) => `+${n} more`,
     state: { running: 'Running', completed: 'Done', failed: 'Failed', stopped: 'Stopped' },
     detail: (tools: number, tokens: string) => `${tools} tool${tools === 1 ? '' : 's'} · ${tokens} tokens`,
+    panelTitle: (type: string) => `Agent: ${type}`,
+    log: 'What this agent did',
+    nothingYet: 'Nothing recorded for this agent yet.',
+    gone: 'This agent is no longer in the session.',
+    thinking: 'Thinking',
+    output: (tool: string) => `${tool} output`,
   },
 
   todo: {
@@ -292,10 +301,10 @@ export const strings = {
   shortcuts: { modeChanged: (mode: string) => `Permissions: ${mode}` },
 
   nvidia: {
-    switchToFallback: 'Switch to NVIDIA Nemotron',
-    limitFallbackHint: 'Click to activate NVIDIA fallback.',
+    switchToFallback: 'Switch to Polar (NVIDIA)',
+    limitFallbackHint: 'Click to activate Polar, the NVIDIA fallback.',
     claudeGroup: 'Anthropic Claude',
-    nvidiaGroup: 'NVIDIA NIM (Fallback)',
+    nvidiaGroup: 'Polar · NVIDIA NIM (fallback)',
   },
 
   inspector: { title: 'Details', close: 'Close details', cut: (shown: string, total: string) => `Showing the first ${shown} of ${total} characters.` },

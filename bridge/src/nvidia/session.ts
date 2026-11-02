@@ -1,28 +1,31 @@
 import { randomUUID } from 'node:crypto';
-import type { Effort, ImageData, PermissionMode, SessionEventBody } from '@ci/shared';
+import { effortLevels, type Effort, type ImageData, type PermissionMode, type SessionEventBody } from '@ci/shared';
 import { SessionCore, type Decision } from '../core.ts';
 import type { EventLog } from '../eventlog.ts';
 import type { SessionSpec } from '../session.ts';
 import { CheckpointManager } from './checkpoint.ts';
 import { NvidiaClient, type ContentPart, type OpenAiMessage, type OpenAiToolCall } from './client.ts';
 import { eventsToOpenAiMessages } from './handoff.ts';
-import { DEFAULT_NVIDIA_MODEL, getNvidiaModel, NVIDIA_MODELS } from './models.ts';
+import { DEFAULT_NVIDIA_MODEL, getNvidiaModel, NVIDIA_MODELS, thinkingParams } from './models.ts';
 import { capToolResult, estimateTokens, shrinkOldToolResults, SHRINK_AT, summaryCut, SUMMARIZE_AT, transcriptForSummary } from './context.ts';
 import { decide, ruleKey } from './permissions.ts';
 import { buildSystemPrompt } from './prompt.ts';
 import { installSkillFromRepo } from './skills/installer.ts';
 import { SkillRuntime } from './skills/runtime.ts';
 import { CORE_TOOLS, executeTool, executeSubagent } from './tools/index.ts';
-import { Hooks } from './hooks.ts';
+import { BACKGROUND_REFUSAL, BatchClaims, FailureTracker, ownedPaths, startsBackgroundProcess, TurnEvidence, validateBatch } from './guard.ts';
+import { Hooks, toClaudeCall } from './hooks.ts';
 import { McpManager } from './mcp.ts';
 import { BackgroundJobs } from './tools/background.ts';
-import { SUBAGENT_READ_ONLY } from './tools/subagent.ts';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { resolveSafePath } from './tools/read.ts';
 import { resolveShell } from './tools/shellResolver.ts';
 
 type Auth = { ok: true; input: Record<string, unknown> } | { ok: false; message: string };
 
-const MAX_TURNS = 25;
+const MAX_TURNS = 100; // model calls per user message; a long task (several agents, builds, fixes) takes more than 25
 // 3 is a cautious default (API rate limits, one permission card per subagent); CLAUDEINTERFACE_MAX_SUBAGENTS raises it up to 8
+const MAX_SUBAGENTS_PER_TURN = 24;
 const MAX_PARALLEL_SUBAGENTS = Math.min(Math.max(Math.trunc(Number(process.env.CLAUDEINTERFACE_MAX_SUBAGENTS)) || 3, 1), 8);
 
 export class NvidiaSession extends SessionCore {
@@ -43,6 +46,16 @@ export class NvidiaSession extends SessionCore {
   /** what compaction kept of the messages it removed; it rides in the system prompt */
   private summary = '';
   private jobs = new BackgroundJobs();
+  /** the model reasons before answering; the agent switches it with set_thinking (on by default, as the models themselves do) */
+  private thinking = true;
+  // how the agents work together (guard.ts): checked here because a prompt alone does not hold
+  private evidence = new TurnEvidence();
+  private failures = new FailureTracker();
+  private claims = new BatchClaims();
+  private subagentsThisTurn = 0;
+  private asked = 0;
+  /** the last model reply ended at the output limit: an unreadable tool call in it was cut off, not badly written */
+  private cutOff = false;
   private mcp = new McpManager();
   private hooks: Hooks;
 
@@ -107,6 +120,8 @@ export class NvidiaSession extends SessionCore {
     if (cut < 0) return;
 
     this.ingest([{ type: 'status', compacting: true }]);
+    const preTokens = estimateTokens(this.messages);
+    const t0 = Date.now();
     try {
       const old = this.messages.slice(1, cut);
       const res = await this.client.streamChat(
@@ -118,6 +133,7 @@ export class NvidiaSession extends SessionCore {
           ],
           max_tokens: 2000,
           temperature: 0.2,
+          ...thinkingParams(getNvidiaModel(this.model), false, 'low'),
           signal,
         },
         {},
@@ -126,7 +142,8 @@ export class NvidiaSession extends SessionCore {
         this.summary = res.text.trim();
         this.messages.splice(1, cut - 1);
         this.messages[0] = { role: 'system', content: this.systemText() };
-        this.announceNotice('The conversation was long: older messages were summarised to stay inside the model\'s context window.');
+        // the same divider Claude's own compaction draws
+        this.ingest([{ type: 'compact', trigger: 'auto', preTokens, postTokens: estimateTokens(this.messages), durationMs: Date.now() - t0 }]);
       }
     } finally {
       this.ingest([{ type: 'status', compacting: false }]);
@@ -155,6 +172,8 @@ export class NvidiaSession extends SessionCore {
       provider: 'nvidia',
       activeShell: shell.path,
       effort: this.effort,
+      // shown in the header when it is off; undefined for a model whose thinking cannot be switched
+      thinking: getNvidiaModel(this.model).thinkingToggle ? this.thinking : undefined,
     };
   }
 
@@ -199,6 +218,9 @@ export class NvidiaSession extends SessionCore {
 
     this.loopRunning = true;
     this.aborted = false;
+    this.evidence = new TurnEvidence();
+    this.failures = new FailureTracker();
+    this.subagentsThisTurn = 0;
 
     try {
       this.ingest([{ type: 'sdk_state', state: 'running' }]);
@@ -246,6 +268,8 @@ export class NvidiaSession extends SessionCore {
       const signal = this.activeAbortController.signal;
 
       let thinkingBlockOpen = false;
+      let reasoningChars = 0;
+      let reportedChars = 0;
       let textBlockOpen = false;
       const thinkingBlockId = `think_${randomUUID()}`;
       const textBlockId = `text_${randomUUID()}`;
@@ -255,14 +279,8 @@ export class NvidiaSession extends SessionCore {
 
       try {
         const activeModelInfo = getNvidiaModel(this.model);
-        const reasoningBudgetMap: Record<Effort, number> = {
-          low: 2048,
-          medium: 8192,
-          high: 16384,
-          xhigh: 24576,
-          max: 32768,
-        };
-        const reasoningBudget = activeModelInfo.supportsReasoningBudget ? reasoningBudgetMap[this.effort] : undefined;
+        const think = thinkingParams(activeModelInfo, this.thinking, this.effort);
+        const withImages = this.messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url'));
 
         await this.fitContext(signal);
         const res = await this.client.streamChat(
@@ -271,14 +289,18 @@ export class NvidiaSession extends SessionCore {
             messages: this.messages,
             tools: this.allTools(),
             signal,
-            enableThinking: activeModelInfo.supportsThinking,
-            reasoningBudget,
+            ...think,
             max_tokens: activeModelInfo.defaultMaxTokens,
             seed: 42,
-            temperature: this.effort === 'low' ? 0.3 : this.effort === 'high' || this.effort === 'max' ? 0.8 : 0.7,
+            // the sampling each model's card recommends (a lower temperature with images for the vision model)
+            temperature: withImages ? (activeModelInfo.sampling.imageTemperature ?? activeModelInfo.sampling.temperature) : activeModelInfo.sampling.temperature,
+            top_p: activeModelInfo.sampling.topP,
           },
           {
+            onRetry: (r) => this.ingest([{ type: 'retrying', ...r }]),
             onReasoning: (delta) => {
+              reasoningChars += delta.length;
+              if (reasoningChars - reportedChars >= 200) { reportedChars = reasoningChars; this.ingest([{ type: 'thinking_progress', estimatedTokens: Math.ceil(reasoningChars / 4) }]); }
               if (!thinkingBlockOpen) {
                 thinkingBlockOpen = true;
                 this.ingest([{ type: 'block_start', blockId: thinkingBlockId, kind: 'thinking' }]);
@@ -301,6 +323,7 @@ export class NvidiaSession extends SessionCore {
 
         resultText = res.text;
         toolCalls = res.toolCalls;
+        this.cutOff = res.finishReason === 'length';
         if (res.usage && res.usage.promptTokens > 0) {
           const max = activeModelInfo.contextWindow;
           this.ingest([{ type: 'usage', totalTokens: res.usage.promptTokens, maxTokens: max, percentage: Math.min(100, (res.usage.promptTokens / max) * 100), categories: res.usage.cachedTokens ? [{ id: 'cached', name: 'Cached prompt', tokens: res.usage.cachedTokens }] : [] }]);
@@ -324,8 +347,14 @@ export class NvidiaSession extends SessionCore {
         tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
       });
 
-      // If no tool calls, this turn is finished
+      // If no tool calls, this turn is finished, unless code was changed and never run or looked at: then it goes back once to check
       if (toolCalls.length === 0) {
+        const reminder = this.evidence.reminder();
+        if (reminder && turnCount < MAX_TURNS) {
+          this.messages.push({ role: 'user', content: reminder });
+          this.ingest([{ type: 'notice', level: 'info', text: 'Polar changed code but had not run it or looked at it. It was sent back to check before finishing.' }]);
+          continue;
+        }
         finished = true;
         this.ingest([
           {
@@ -343,12 +372,20 @@ export class NvidiaSession extends SessionCore {
 
       if (toolCalls.every((c) => c.function.name.trim() === 'invoke_subagent')) {
         // independent subagents run side by side (3 at a time); their answers go back in the order the model asked
-        const from = this.messages.length;
-        for (let i = 0; i < toolCalls.length && !this.aborted; i += MAX_PARALLEL_SUBAGENTS) {
-          await Promise.all(toolCalls.slice(i, i + MAX_PARALLEL_SUBAGENTS).map((c) => this.runToolCall(c)));
+        const problem = this.batchProblem(toolCalls);
+        if (problem) {
+          // not one of them runs: the lead plans the split again instead of getting agents that collide
+          for (const c of toolCalls) this.rejectCall(c, problem);
+        } else {
+          const from = this.messages.length;
+          this.claims.reset();
+          for (let i = 0; i < toolCalls.length && !this.aborted; i += MAX_PARALLEL_SUBAGENTS) {
+            await Promise.all(toolCalls.slice(i, i + MAX_PARALLEL_SUBAGENTS).map((c) => this.runToolCall(c)));
+          }
+          this.claims.reset();
+          const order = new Map(toolCalls.map((c, i) => [c.id, i]));
+          this.messages.splice(from, this.messages.length - from, ...this.messages.slice(from).sort((a, b) => (order.get(a.tool_call_id ?? '') ?? 0) - (order.get(b.tool_call_id ?? '') ?? 0)));
         }
-        const order = new Map(toolCalls.map((c, i) => [c.id, i]));
-        this.messages.splice(from, this.messages.length - from, ...this.messages.slice(from).sort((a, b) => (order.get(a.tool_call_id ?? '') ?? 0) - (order.get(b.tool_call_id ?? '') ?? 0)));
       } else {
         // everything else one after the other: edits and commands may depend on each other
         for (const call of toolCalls) {
@@ -366,11 +403,38 @@ export class NvidiaSession extends SessionCore {
     }
   }
 
+  /** Why a batch of agents started together may not run (no files, shared files, too many), or nothing. */
+  private batchProblem(calls: OpenAiToolCall[]): string | undefined {
+    const requests = calls.map((c) => {
+      let a: Record<string, unknown> = {};
+      try { a = JSON.parse(c.function.arguments || '{}'); } catch { /* reported when it runs */ }
+      return { role: String(a.role ?? 'Polar'), files: a.files, check: a.check };
+    });
+    this.subagentsThisTurn += calls.length;
+    if (this.subagentsThisTurn > MAX_SUBAGENTS_PER_TURN) return `Batch not run: ${MAX_SUBAGENTS_PER_TURN} agents were already started in this turn. More of them will not make it faster or better. Integrate and check what you have.`;
+    return validateBatch(requests, this.cwd);
+  }
+
+  /** Answers a call with an error without running it, drawing it like any other card. */
+  private rejectCall(call: OpenAiToolCall, text: string): void {
+    let args: Record<string, unknown> = {};
+    try { args = JSON.parse(call.function.arguments || '{}'); } catch { /* shown as it is */ }
+    const card = this.shown(call.function.name.trim(), args);
+    this.ingest([
+      { type: 'tool_start', id: call.id, name: card.name },
+      { type: 'tool_input', id: call.id, input: card.input },
+      { type: 'tool_end', id: call.id, result: { text, images: 0 }, isError: true },
+    ]);
+    this.messages.push({ role: 'tool', tool_call_id: call.id, content: text });
+  }
+
   /** Runs one tool call of the model: permission, execution, and the matching tool message. */
   private async runToolCall(call: OpenAiToolCall): Promise<void> {
     const toolName = call.function.name.trim();
-    const answer = (text: string, isError: boolean, extra: { truncated?: boolean } = {}) => {
-      this.ingest([{ type: 'tool_end', id: call.id, result: { text, images: 0, ...extra }, isError }]);
+    let tracked: Record<string, unknown> | undefined; // set once the arguments parse: the same call failing again and again is noticed
+    const answer = (rawText: string, isError: boolean, extra: { truncated?: boolean; imageData?: { mediaType: string; data: string }[] } = {}) => {
+      const text = rawText + (tracked ? (this.failures.after(toolName, tracked, isError) ?? '') : '');
+      this.ingest([{ type: 'tool_end', id: call.id, result: { text, images: extra.imageData?.length ?? 0, ...extra }, isError }]);
       this.messages.push({ role: 'tool', tool_call_id: call.id, content: capToolResult(text) }); // the UI keeps the full text
     };
 
@@ -380,14 +444,27 @@ export class NvidiaSession extends SessionCore {
     } catch {
       // usually a reply cut off by the token limit: tell the model instead of running a call it did not finish writing
       this.ingest([{ type: 'tool_start', id: call.id, name: toolName }, { type: 'tool_input', id: call.id, input: { raw: call.function.arguments } }]);
-      answer(`Error: the arguments of "${toolName}" were not valid JSON (the reply may have been cut off). Send the call again with shorter content.`, true);
+      answer(this.cutOff ? 'Error: Your reply hit the output limit while you were writing this call, so it was cut off and nothing ran. Do not resend the same big call: write the file in smaller pieces (create it with a short first version, then add the rest with edit_file), or split the work.' : `Error: the arguments of "${toolName}" were not valid JSON. Send the call again with valid JSON arguments.`, true);
       return;
     }
 
+    const card = this.shown(toolName, parsedArgs);
     this.ingest([
-      { type: 'tool_start', id: call.id, name: toolName },
-      { type: 'tool_input', id: call.id, input: parsedArgs },
+      { type: 'tool_start', id: call.id, name: card.name },
+      { type: 'tool_input', id: call.id, input: card.input },
     ]);
+
+    const loop = this.failures.before(toolName, parsedArgs);
+    if (loop) {
+      answer(loop, true);
+      return;
+    }
+    tracked = parsedArgs;
+
+    if (toolName === 'bash' && parsedArgs.run_in_background !== true && startsBackgroundProcess(String(parsedArgs.command ?? ''))) {
+      answer(BACKGROUND_REFUSAL, true);
+      return;
+    }
 
     if (toolName === 'exit_plan') {
       answer(...(await this.exitPlan(call.id, parsedArgs)));
@@ -409,6 +486,11 @@ export class NvidiaSession extends SessionCore {
       // the UI draws the task strip from the call itself; the model only needs to know it was taken
       const ok = Array.isArray(args.todos);
       answer(ok ? 'Task list updated.' : 'Error: "todos" must be an array of {content, activeForm, status}.', !ok);
+      return;
+    }
+
+    if (toolName === 'set_thinking') {
+      answer(...(await this.setThinking(args)));
       return;
     }
 
@@ -451,16 +533,23 @@ export class NvidiaSession extends SessionCore {
     }
 
     if (toolName === 'invoke_subagent') {
-      const role = String(args.role ?? 'Specialized Agent');
+      const role = String(args.role ?? 'Polar');
       const description = String(args.description ?? 'Delegated task');
+      const stopTicker = this.tickProgress(call.id);
+      const owned = ownedPaths(args.files, this.cwd);
+      const agentKey = `${role}#${call.id.slice(-4)}`;
       const subRes = await executeSubagent(
         {
           role,
           description,
           prompt: String(args.prompt ?? ''),
+          files: Array.isArray(args.files) ? args.files.map(String) : undefined,
+          check: typeof args.check === 'string' && args.check.trim() ? args.check.trim() : undefined,
           model: args.model ? String(args.model) : undefined,
           maxTurns: typeof args.maxTurns === 'number' ? args.maxTurns : undefined,
-          tools: args.read_only === true ? SUBAGENT_READ_ONLY : undefined,
+          // a subagent thinks as the lead does now, unless the lead says otherwise for this one
+          thinking: typeof args.thinking === 'boolean' ? args.thinking : this.thinking,
+          effort: this.effort,
         },
         this.cwd,
         {
@@ -471,20 +560,42 @@ export class NvidiaSession extends SessionCore {
                 taskId: ev.taskId,
                 toolUseId: call.id,
                 subagentType: ev.subagentType,
-                description: ev.summary ?? description,
+                description,
                 state: ev.state,
                 toolUses: ev.toolUses,
+                tokens: ev.tokens,
+                lastTool: ev.lastTool,
+                summary: ev.summary,
               },
             ]);
+          },
+          // what the subagent says, thinks and runs, tied to its card by parentId: the UI nests the tool cards and the lane detail shows the rest
+          onEvent: (_taskId, ev) => {
+            const parentId = call.id;
+            switch (ev.kind) {
+              case 'block_start': this.ingest([{ type: 'block_start', blockId: ev.blockId, kind: ev.block, parentId }]); break;
+              case 'delta': this.ingest([ev.block === 'text' ? { type: 'text_delta', blockId: ev.blockId, text: ev.text } : { type: 'thinking_delta', blockId: ev.blockId, text: ev.text }]); break;
+              case 'block_end': this.ingest([{ type: 'block_end', blockId: ev.blockId }]); break;
+              case 'tool_start': {
+                const sub = this.shown(ev.name, ev.input);
+                this.ingest([{ type: 'tool_start', id: ev.id, name: sub.name, parentId }, { type: 'tool_input', id: ev.id, input: sub.input }]);
+                break;
+              }
+              case 'tool_end': this.ingest([{ type: 'tool_end', id: ev.id, result: { text: ev.text, images: 0 }, isError: ev.isError, parentId }]); break;
+            }
           },
         },
         this.activeAbortController?.signal,
         {
-          authorize: (name, input) => this.authorize(call.id, name, input),
+          authorize: (name, input) => this.authorize(call.id, name, input, role),
           addDirs: this.addDirs,
           checkpoint: this.checkpoint,
+          guardWrite: (path) => this.claims.write(agentKey, path, owned, this.cwd),
+          jobs: this.jobs, // a server a subagent starts is tracked and stopped with the session, like the lead's
         },
       );
+      stopTicker();
+      this.evidence.noteChanged(subRes.modified); // what an agent changed still has to be run by the lead: the parts must fit together
       this.ingest([
         {
           type: 'tool_end',
@@ -498,12 +609,41 @@ export class NvidiaSession extends SessionCore {
     }
 
     const signal = this.activeAbortController?.signal;
-    const execRes: { text: string; isError: boolean; truncated?: boolean } = this.mcp.isMcpTool(toolName)
-      ? await this.mcp.call(toolName, args, signal)
-      : await executeTool(toolName, args, this.cwd, this.addDirs, signal, this.checkpoint);
+    const stopTicker = this.tickProgress(call.id);
+    let execRes: { text: string; isError: boolean; truncated?: boolean; imageData?: { mediaType: string; data: string }[] };
+    try {
+      execRes = this.mcp.isMcpTool(toolName)
+        ? await this.mcp.call(toolName, args, signal)
+        : await executeTool(toolName, args, this.cwd, this.addDirs, signal, this.checkpoint);
+    } finally {
+      stopTicker();
+    }
+    // what the lead itself changed, ran or looked at: the harness sends it back to check if it tries to finish without doing so
+    if (!execRes.isError && (toolName === 'write_file' || toolName === 'edit_file')) this.evidence.noteChanged([String(args.path ?? '')]);
+    if (toolName === 'bash') this.evidence.noteCommand(String(args.command ?? ''));
+    if (toolName === 'screenshot' && !execRes.isError) this.evidence.noteLook();
     // a PostToolUse hook can add feedback the model should see (a linter's complaint, say)
     const post: { message?: string } = this.hooks.any ? await this.hooks.run('PostToolUse', toolName, args, { tool_response: { text: execRes.text, isError: execRes.isError } }, signal) : {};
-    answer(post.message ? `${execRes.text}\n\n[PostToolUse hook]: ${post.message}` : execRes.text, execRes.isError, { truncated: execRes.truncated });
+    answer(post.message ? `${execRes.text}\n\n[PostToolUse hook]: ${post.message}` : execRes.text, execRes.isError, { truncated: execRes.truncated, imageData: execRes.imageData });
+  }
+
+  /** The agent decides how much to think for the work in front of it: off for mechanical steps (about three times faster), on and higher for hard ones. */
+  private async setThinking(input: Record<string, unknown>): Promise<[string, boolean]> {
+    if (typeof input.enabled !== 'boolean') return ['Error: "enabled" must be true or false.', true];
+    const info = getNvidiaModel(this.model);
+    if (!info.thinkingToggle) return [`${info.label} always reasons and its thinking cannot be switched, so nothing changed. Carry on with the task.`, false];
+    const effort = (effortLevels as readonly string[]).includes(String(input.effort)) ? (input.effort as Effort) : undefined;
+    if (effort) await this.setEffort(effort);
+    this.thinking = input.enabled;
+    this.ingest([{ type: 'status', compacting: false, thinking: this.thinking }, this.initEvent()]);
+    return [`Thinking is now ${this.thinking ? `on${effort ? ` at ${effort} effort` : ''}` : 'off'}. It applies from your next step.`, false];
+  }
+
+  /** Claude's cards count the seconds of a running tool; this does the same for a tool that takes a while. Returns the function that stops it. */
+  private tickProgress(id: string): () => void {
+    const t0 = Date.now();
+    const timer = setInterval(() => this.ingest([{ type: 'tool_progress', id, elapsedSec: Math.round((Date.now() - t0) / 1000) }]), 1000);
+    return () => clearInterval(timer);
   }
 
   /** The model asks the user to choose; the answer comes back as text it can act on. */
@@ -541,8 +681,21 @@ export class NvidiaSession extends SessionCore {
     return [`Plan approved. Permissions are now "${this.mode}". Carry out the plan.`, false];
   }
 
-  /** The one gate for every tool call, the main agent's and its subagents'. */
-  private async authorize(toolUseId: string, toolName: string, input: Record<string, unknown>): Promise<Auth> {
+  /** The UI draws cards (icon, diff, file preview, nesting) from Claude's tool names and argument shapes, so it gets the Claude form of each call. */
+  private shown(name: string, input: Record<string, unknown>): { name: string; input: Record<string, unknown> } {
+    const call = toClaudeCall(name, input) ?? { name, input };
+    // an overwrite is drawn against the file's previous content, so the card shows which lines were erased (display only: it is never executed)
+    if (name === 'write_file' && typeof input.path === 'string') {
+      try {
+        const file = resolveSafePath(this.cwd, input.path, this.addDirs);
+        if (existsSync(file) && statSync(file).size <= 200_000) call.input = { ...call.input, old_content: readFileSync(file, 'utf-8') };
+      } catch { /* unreadable: it is shown as a new file */ }
+    }
+    return call;
+  }
+
+  /** The one gate for every tool call, the main agent's and its subagents' (`agent` names the subagent on the permission card). */
+  private async authorize(toolUseId: string, toolName: string, input: Record<string, unknown>, agent?: string): Promise<Auth> {
     // the user's own PreToolUse hooks run first and can refuse the call outright
     if (this.hooks.any) {
       const h = await this.hooks.run('PreToolUse', toolName, input, {}, this.activeAbortController?.signal);
@@ -577,13 +730,18 @@ export class NvidiaSession extends SessionCore {
           ? `Read outside workspace: ${path}`
           : `Edit file ${path}`;
 
+    // several agents each ask to write: say once that the user can stop approving every step
+    if (++this.asked === 6 && this.mode === 'default') {
+      this.announceNotice('Polar has asked for several approvals. If you trust this task, set Permissions to "Accept edits" (file changes) or "Auto" (file changes and safe commands) and it will stop asking for each step.');
+    }
     const decision = (await this.request(
       {
         type: 'permission_request',
         reqId: randomUUID(),
-        tool: toolName,
+        tool: this.shown(toolName, input).name,
         toolUseId,
-        input,
+        input: this.shown(toolName, input).input,
+        agentId: agent,
         displayName,
         description,
         requiresUserInteraction: true,

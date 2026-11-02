@@ -22,6 +22,8 @@ export type ToolView = Instant & {
   /** the whole output has been fetched, after it was cut for the wire */
   full?: boolean;
   depth?: number;
+  /** the tool call of the agent that made this call: the card is drawn inside that agent's card */
+  parentId?: string;
 };
 
 export type DiffLine = { kind: 'add' | 'del' | 'ctx'; text: string; oldNo?: number; newNo?: number; /** a "… N unchanged lines" marker, not a line of the text */ fold?: boolean };
@@ -70,7 +72,14 @@ export type LaneView = {
   toolUses: number;
   tokens: number;
   depth: number;
+  /** the tool call that started this agent; its own events carry it as parentId, which is how its log is found */
+  toolUseId?: string;
 };
+
+/** One line of what a subagent did, for its detail panel. */
+export type LaneEntry =
+  | { kind: 'text' | 'thinking'; id: string; text: string }
+  | { kind: 'tool'; id: string; name: string; target: string; status: 'running' | 'ok' | 'error'; output?: string };
 
 export type TodoItem = { content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' };
 

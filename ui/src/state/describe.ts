@@ -33,6 +33,8 @@ export function diffFor(tool: string, input: Record<string, unknown>, limit = LI
     return lineDiff(input.old_string, input.new_string, 2);
   }
   if (tool === 'Write' && typeof input.content === 'string') {
+    // the fallback sends the file's previous content with an overwrite, so the card shows what was really erased
+    if (typeof input.old_content === 'string') return lineDiff(input.old_content, input.content, 2);
     const all = lines(input.content);
     return [
       ...all.slice(0, limit).map((text, i): DiffLine => ({ kind: 'add', text, newNo: i + 1 })),

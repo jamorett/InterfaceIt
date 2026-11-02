@@ -2,14 +2,18 @@ import { AnsiText } from '../components/AnsiText.tsx';
 import { CodeBlock } from '../components/CodeBlock.tsx';
 import { DiffView } from '../components/DiffView.tsx';
 import { countChanges } from '../state/diff.ts';
+import type { SessionView } from '../state/reduce.ts';
 import { strings } from '../strings.ts';
 import type { InspectorContent } from './inspector.ts';
+import { LaneBody } from './LaneBody.tsx';
 
 /** Whole outputs are shown up to this many characters; beyond it the panel says so instead of building a multi-megabyte page. */
 const PANEL_LIMIT = 400_000;
 
-export function InspectorBody({ content }: { content: InspectorContent }) {
+export function InspectorBody({ content, view }: { content: InspectorContent; view?: SessionView }) {
   switch (content.kind) {
+    case 'lane':
+      return <LaneBody view={view} laneId={content.laneId} />;
     case 'diff': {
       const { added, removed } = countChanges(content.lines);
       return (

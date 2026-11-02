@@ -140,6 +140,7 @@ export const scenarios: Record<ScenarioName, () => ReactNode> = {
   'tool-failed': () => <Session state="error" items={fx.failedTranscript} />,
   bypass: () => <Session state="running" mode="bypassPermissions" items={fx.runningTranscript} />,
   'tools-rich': () => <Session state="idle" items={fx.richToolsTranscript} />,
+  'subagent-cards': () => <Session state="running" items={fx.subagentTranscript} />,
   inspector: () => <Session state="awaiting_permission" items={fx.permissionTranscript} inspectorOpen />,
 };
 

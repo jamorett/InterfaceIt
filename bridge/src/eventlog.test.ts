@@ -45,3 +45,38 @@ describe('EventLog', () => {
     expect(wire.type === 'tool_input' && (wire.input as { file_path: string }).file_path).toBe('a.txt');
   });
 });
+
+describe('post-mortem log on disk (CLAUDEINTERFACE_LOG_DIR)', () => {
+  it('is off unless asked for, and when on writes one JSON line per event with pictures cut to a size', async () => {
+    const { existsSync, mkdtempSync, readFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'ci-log-'));
+    try {
+      delete process.env.CLAUDEINTERFACE_LOG_DIR;
+      new EventLog('off').append({ type: 'commands_changed' });
+      expect(existsSync(join(dir, 'off.jsonl'))).toBe(false);
+
+      process.env.CLAUDEINTERFACE_LOG_DIR = dir;
+      const log = new EventLog('on');
+      log.append({ type: 'tool_end', id: 't', isError: true, result: { text: 'Error: boom', images: 1, imageData: [{ mediaType: 'image/png', data: 'A'.repeat(5000) }] } });
+      log.append({ type: 'text_delta', blockId: 'b', text: 'hello' });
+      const lines = readFileSync(join(dir, 'on.jsonl'), 'utf-8').trim().split('\n').map((l) => JSON.parse(l));
+      expect(lines.map((l) => l.type)).toEqual(['tool_end', 'text_delta']);
+      expect(lines[0].isError).toBe(true);
+      expect(lines[0].result.imageData[0].data).toBe('[5000 base64 characters]');
+    } finally {
+      delete process.env.CLAUDEINTERFACE_LOG_DIR;
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
+  });
+
+  it('never breaks the session when the folder cannot be written', () => {
+    process.env.CLAUDEINTERFACE_LOG_DIR = '\0not-a-path';
+    try {
+      expect(() => new EventLog('x').append({ type: 'commands_changed' })).not.toThrow();
+    } finally {
+      delete process.env.CLAUDEINTERFACE_LOG_DIR;
+    }
+  });
+});

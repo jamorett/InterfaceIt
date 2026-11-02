@@ -18,6 +18,8 @@ export type HeaderProps = {
   /** the levels the current model supports; the selector is hidden when there are none */
   efforts?: Effort[];
   effort?: Effort;
+  /** shown as a note when the agent has switched its reasoning off */
+  thinkingOff?: boolean;
   onEffort?: (effort: Effort) => void;
   onMenu?: () => void;
   onModel?: (value: string) => void;
@@ -29,11 +31,12 @@ export type HeaderProps = {
 
 const modes = Object.keys(strings.mode) as PermissionMode[];
 
-function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: React.ReactNode }) {
+/** `shrinks`: the one select whose options are long (the model) may get narrower when space is tight; the others keep their size. */
+function Select({ label, value, onChange, children, shrinks }: { label: string; value: string; onChange: (value: string) => void; children: React.ReactNode; shrinks?: boolean }) {
   return (
-    <label className="flex min-w-0 items-center gap-1.5 text-sm text-muted">
+    <label className={`flex items-center gap-1.5 text-sm text-muted ${shrinks ? 'min-w-0' : ''}`}>
       {label}
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="min-h-8 min-w-0 flex-1 rounded-control border border-line bg-card px-2 text-base text-ink pointer-coarse:min-h-11">{children}</select>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={`min-h-8 rounded-control border border-line bg-card px-2 text-base text-ink pointer-coarse:min-h-11 ${shrinks ? 'min-w-0 flex-1' : ''}`}>{children}</select>
     </label>
   );
 }
@@ -48,7 +51,7 @@ export function Header(p: HeaderProps) {
 
   const controls = (
     <>
-      <Select label={strings.header.model} value={p.model} onChange={(v) => p.onModel?.(v)}>
+      <Select shrinks label={strings.header.model} value={p.model} onChange={(v) => p.onModel?.(v)}>
         {claudeGroup.length > 0 && nvidiaGroup.length > 0 ? (
           <>
             <optgroup label={strings.nvidia.claudeGroup}>
@@ -68,6 +71,7 @@ export function Header(p: HeaderProps) {
           {p.efforts.map((e) => <option key={e} value={e}>{strings.effort[e]}</option>)}
         </Select>
       )}
+      {p.thinkingOff && <span className="shrink-0 text-sm text-muted" title={strings.header.thinkingOffHint}>{strings.header.thinkingOff}</span>}
       <Select label={strings.header.permissions} value={p.mode} onChange={(v) => p.onMode?.(v as PermissionMode)}>
         {modes.map((m) => <option key={m} value={m}>{strings.mode[m]}</option>)}
       </Select>

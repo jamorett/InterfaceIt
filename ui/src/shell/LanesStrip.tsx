@@ -1,8 +1,9 @@
 import { Check, LoaderCircle, Square, X } from 'lucide-react';
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import type { LaneView } from '../model.ts';
 import { strings } from '../strings.ts';
 import { formatTokens, middleTruncate } from '../text.ts';
+import { InspectorContext } from './inspector.ts';
 
 const MAX_VISIBLE = 6;
 
@@ -13,13 +14,21 @@ function StateIcon({ state }: { state: LaneView['state'] }) {
   return <Square aria-hidden className="size-3.5 text-muted" />;
 }
 
+/** A pill per agent; clicking it opens that agent's live log in the side panel. */
 function Lane({ lane }: { lane: LaneView }) {
+  const openPanel = useContext(InspectorContext);
   return (
-    <li className="enter flex shrink-0 items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-sm" style={{ marginLeft: Math.min(lane.depth, 3) * 8 }}>
-      <StateIcon state={lane.state} />
-      <span className="font-medium">{lane.type}</span>
-      <span className="text-muted" title={lane.description}>{middleTruncate(lane.description, 28)}</span>
-      <span className="text-muted">{strings.lanes.state[lane.state]} · {strings.lanes.detail(lane.toolUses, formatTokens(lane.tokens))}</span>
+    <li className="enter shrink-0" style={{ marginLeft: Math.min(lane.depth, 3) * 8 }}>
+      <button
+        type="button"
+        onClick={() => openPanel({ kind: 'lane', title: strings.lanes.panelTitle(lane.type), laneId: lane.id })}
+        className="press hoverable flex items-center gap-2 rounded-full border border-line bg-card px-3 py-1 text-sm pointer-coarse:min-h-11"
+      >
+        <StateIcon state={lane.state} />
+        <span className="font-medium">{lane.type}</span>
+        <span className="text-muted" title={lane.description}>{middleTruncate(lane.description, 28)}</span>
+        <span className="text-muted">{strings.lanes.state[lane.state]} · {strings.lanes.detail(lane.toolUses, formatTokens(lane.tokens))}</span>
+      </button>
     </li>
   );
 }

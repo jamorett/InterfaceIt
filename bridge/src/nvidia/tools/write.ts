@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { CheckpointManager } from '../checkpoint.ts';
+import { withFileLock } from './filelock.ts';
 import { resolveSafePath } from './read.ts';
 
 export interface WriteToolInput {
@@ -23,11 +24,11 @@ export async function executeWrite(
   const safePath = resolveSafePath(cwd, input.path, addDirs);
 
   try {
-    if (checkpoint) {
-      await checkpoint.snapshotFile(safePath);
-    }
-    await mkdir(dirname(safePath), { recursive: true });
-    await writeFile(safePath, input.content, 'utf-8');
+    await withFileLock(safePath, async () => {
+      if (checkpoint) await checkpoint.snapshotFile(safePath);
+      await mkdir(dirname(safePath), { recursive: true });
+      await writeFile(safePath, input.content, 'utf-8');
+    });
     const lines = input.content.split(/\r?\n/).length;
     const bytes = Buffer.byteLength(input.content, 'utf-8');
 

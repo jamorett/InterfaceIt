@@ -1,7 +1,7 @@
 // The UI is a projection of the session's event log (PLAN.md §4 rule 1): `reduce(view, event)` is the whole story.
 // It is a plain function so it can be tested by feeding it the recorded real sessions.
 import type { Effort, PermissionMode, Question, RateWindow, SessionEvent, SessionState } from '@ci/shared';
-import type { ContextView, LaneView, PermissionDecision, TodoItem, TranscriptItem } from '../model.ts';
+import type { ContextView, LaneEntry, LaneView, PermissionDecision, TodoItem, TranscriptItem } from '../model.ts';
 import { middleTruncate } from '../text.ts';
 import { describeTool, diffFor, todosFrom } from './describe.ts';
 
@@ -21,12 +21,16 @@ export type SessionView = {
   mode: PermissionMode;
   /** the reasoning effort, once the bridge has reported one */
   effort?: Effort;
+  /** false when the agent switched its reasoning off; undefined when the model has no such switch */
+  thinking?: boolean;
   items: TranscriptItem[];
   queued: { id: string; text: string }[];
   suggestion?: string;
   context?: ContextView;
   limits: { status: 'allowed' | 'allowed_warning' | 'rejected'; fiveHour?: RateWindow; sevenDay?: RateWindow; resetsAt?: number };
   tasks: LaneView[];
+  /** what each subagent said, thought and ran, by the id of the tool call that started it */
+  laneLogs: Record<string, LaneEntry[]>;
   background: number;
   todos: TodoItem[];
   retrying?: { attempt: number; max: number };
@@ -46,7 +50,7 @@ export const lanesOf = (v: SessionView): LaneView[] => v.tasks.filter((t) => t.t
 export function initialView(id: string, cwd: string): SessionView {
   return {
     id, cwd, lastSeq: 0, state: 'idle', models: [], commands: [], mode: 'default', items: [], queued: [],
-    limits: { status: 'allowed' }, tasks: [], background: 0, todos: [], announce: '', starts: {}, asking: {},
+    limits: { status: 'allowed' }, tasks: [], laneLogs: {}, background: 0, todos: [], announce: '', starts: {}, asking: {},
   };
 }
 
@@ -75,7 +79,22 @@ function lane(prev: LaneView | undefined, e: Extract<SessionEvent, { type: 'task
     toolUses: e.toolUses ?? prev?.toolUses ?? 0,
     tokens: e.tokens ?? prev?.tokens ?? 0,
     depth: e.depth ?? prev?.depth ?? 0,
+    toolUseId: e.toolUseId ?? prev?.toolUseId,
   };
+}
+
+const LANE_OUTPUT_CAP = 20_000; // a tool's whole output is on its card; the agent's panel only needs the start
+
+/** Adds an entry to the log of the subagent started by `parentId`. */
+const logAdd = (v: SessionView, parentId: string, entry: LaneEntry): SessionView => ({ ...v, laneLogs: { ...v.laneLogs, [parentId]: [...(v.laneLogs[parentId] ?? []), entry] } });
+
+/** Changes the entry with this id wherever it is, or returns nothing when it is not in any agent's log (it belongs to the main conversation). */
+function logPatch(v: SessionView, id: string, change: (e: LaneEntry) => LaneEntry): SessionView | undefined {
+  for (const [parent, entries] of Object.entries(v.laneLogs)) {
+    const i = entries.findIndex((e) => e.id === id);
+    if (i >= 0) return { ...v, laneLogs: { ...v.laneLogs, [parent]: entries.map((e, j) => (j === i ? change(e) : e)) } };
+  }
+  return undefined;
 }
 
 /** Apply one event. `instant` comes from the animation gate: true means "do not animate this one". */
@@ -86,11 +105,11 @@ export function reduce(view: SessionView, e: SessionEvent, instant: boolean): Se
   const flag = instant ? { instant: true } : {};
 
   switch (e.type) {
-    case 'session_init': return { ...v, init: e, mode: e.mode, effort: e.effort ?? v.effort };
+    case 'session_init': return { ...v, init: e, mode: e.mode, effort: e.effort ?? v.effort, thinking: e.thinking };
     case 'models': return { ...v, models: e.models };
     case 'commands': return { ...v, commands: e.commands };
     case 'session_state': return { ...v, state: e.state, retrying: e.state === 'retrying' ? v.retrying : undefined };
-    case 'status': return e.mode || e.effort ? { ...v, mode: e.mode ?? v.mode, effort: e.effort ?? v.effort } : v;
+    case 'status': return e.mode || e.effort || e.thinking !== undefined ? { ...v, mode: e.mode ?? v.mode, effort: e.effort ?? v.effort, thinking: e.thinking ?? v.thinking } : v;
     case 'usage': return { ...v, context: { totalTokens: e.totalTokens, maxTokens: e.maxTokens } };
     case 'rate_limit': return { ...v, limits: { status: e.status, fiveHour: e.fiveHour ?? v.limits.fiveHour, sevenDay: e.sevenDay ?? v.limits.sevenDay, resetsAt: e.resetsAt } };
     case 'suggestion': return { ...v, suggestion: e.text };
@@ -102,11 +121,14 @@ export function reduce(view: SessionView, e: SessionEvent, instant: boolean): Se
     case 'user_message': return { ...add({ kind: 'user', id: e.id, text: e.text, images: e.images, ...flag }), suggestion: undefined };
 
     case 'block_start': {
-      if (e.parentId) return v; // a subagent's own text is shown with its lane (M3), not in the main conversation
+      if (e.parentId) return logAdd(v, e.parentId, { kind: e.kind, id: e.blockId, text: '' }); // a subagent's own words go to its panel, not the main conversation
       if (e.kind === 'thinking') return { ...add({ kind: 'thinking', id: e.blockId, tokens: 0, live: true }), starts: { ...v.starts, [e.blockId]: e.ts } };
       return add({ kind: 'assistant', id: e.blockId, text: '', streaming: true, synthetic: e.synthetic, ...flag });
     }
+    case 'thinking_delta': return logPatch(v, e.blockId, (x) => (x.kind === 'tool' ? x : { ...x, text: x.text + e.text })) ?? v; // the main agent's thinking is only counted, a subagent's is kept
     case 'text_delta': {
+      const sub = logPatch(v, e.blockId, (x) => (x.kind === 'tool' ? x : { ...x, text: x.text + e.text }));
+      if (sub) return sub;
       const i = find(v.items, (x) => x.kind === 'assistant' && x.id === e.blockId);
       const it = v.items[i];
       return i < 0 || it?.kind !== 'assistant' ? v : { ...v, items: replaceAt(v.items, i, { ...it, text: it.text + e.text }) };
@@ -126,13 +148,16 @@ export function reduce(view: SessionView, e: SessionEvent, instant: boolean): Se
 
     case 'tool_start': {
       if (toolIndex(v.items, e.id) >= 0) return v;
-      return { ...add({ kind: 'tool', tool: { id: e.id, name: e.name, target: '', status: 'running', depth: depthOf(v.items, e.parentId), ...flag } }), starts: { ...v.starts, [e.id]: e.ts } };
+      const started = { ...add({ kind: 'tool', tool: { id: e.id, name: e.name, target: '', status: 'running', depth: depthOf(v.items, e.parentId), parentId: e.parentId, ...flag } }), starts: { ...v.starts, [e.id]: e.ts } };
+      return e.parentId ? logAdd(started, e.parentId, { kind: 'tool', id: e.id, name: e.name, target: '', status: 'running' }) : started;
     }
     case 'tool_input': {
       const i = toolIndex(v.items, e.id);
       const it = v.items[i];
       const todos = it?.kind === 'tool' ? todosFrom(it.tool.name, e.input, v.todos) : v.todos;
-      return it?.kind === 'tool' ? { ...v, todos, items: replaceAt(v.items, i, { kind: 'tool', tool: { ...it.tool, target: describeTool(it.tool.name, e.input), input: e.input } }) } : v;
+      if (it?.kind !== 'tool') return v;
+      const next = { ...v, todos, items: replaceAt(v.items, i, { kind: 'tool', tool: { ...it.tool, target: describeTool(it.tool.name, e.input), input: e.input } } as TranscriptItem) };
+      return logPatch(next, e.id, (x) => (x.kind === 'tool' ? { ...x, target: describeTool(x.name, e.input) } : x)) ?? next;
     }
     case 'tool_progress': {
       const i = toolIndex(v.items, e.id);
@@ -144,7 +169,8 @@ export function reduce(view: SessionView, e: SessionEvent, instant: boolean): Se
       const it = v.items[i];
       if (it?.kind !== 'tool') return v;
       const elapsedSec = (e.ts - (v.starts[e.id] ?? e.ts)) / 1000;
-      return { ...v, items: replaceAt(v.items, i, { kind: 'tool', tool: { ...it.tool, status: e.isError ? 'error' : 'ok', output: e.result.text, images: e.result.imageData, truncatedBytes: e.result.truncated ? e.result.bytes : undefined, elapsedSec: it.tool.elapsedSec ?? elapsedSec } }) };
+      const done = { ...v, items: replaceAt(v.items, i, { kind: 'tool', tool: { ...it.tool, status: e.isError ? 'error' : 'ok', output: e.result.text, images: e.result.imageData, truncatedBytes: e.result.truncated ? e.result.bytes : undefined, elapsedSec: it.tool.elapsedSec ?? elapsedSec } } as TranscriptItem) };
+      return logPatch(done, e.id, (x) => (x.kind === 'tool' ? { ...x, status: e.isError ? 'error' : 'ok', output: e.result.text.slice(0, LANE_OUTPUT_CAP) } : x)) ?? done;
     }
 
     case 'permission_request': {

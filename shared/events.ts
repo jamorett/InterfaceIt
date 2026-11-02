@@ -49,11 +49,11 @@ export type BackgroundTask = { taskId: string; taskType?: string; subagentType?:
 
 /** A session event: everything the transcript, the status bar and the notifications are drawn from. */
 export type SessionEventBody =
-  | { type: 'session_init'; sdkSessionId: string; cwd: string; model: string; mode: PermissionMode; version: string; authMode: AuthMode; tools: string[]; slashCommands: string[]; agents: string[]; skills: string[]; mcpServers: { name: string; status: string }[]; outputStyle: string; capabilities: string[]; addDirs: string[]; fastMode?: string; provider?: 'claude' | 'nvidia'; activeShell?: string; effort?: Effort }
+  | { type: 'session_init'; sdkSessionId: string; cwd: string; model: string; mode: PermissionMode; version: string; authMode: AuthMode; tools: string[]; slashCommands: string[]; agents: string[]; skills: string[]; mcpServers: { name: string; status: string }[]; outputStyle: string; capabilities: string[]; addDirs: string[]; fastMode?: string; provider?: 'claude' | 'nvidia'; activeShell?: string; effort?: Effort; /** reasoning on or off, for models where it can be switched */ thinking?: boolean }
   | { type: 'session_state'; state: SessionState }
   | { type: 'models'; models: { value: string; label: string; description?: string; efforts: Effort[]; fast: boolean; provider?: 'claude' | 'nvidia' }[] }
   | { type: 'sdk_state'; state: 'idle' | 'running' | 'requires_action' }
-  | { type: 'status'; compacting: boolean; mode?: PermissionMode; effort?: Effort }
+  | { type: 'status'; compacting: boolean; mode?: PermissionMode; effort?: Effort; thinking?: boolean }
   | { type: 'user_message'; id: string; text: string; images?: ImageData[] }
   | { type: 'commands'; commands: { name: string; description?: string; hint?: string }[] }
   | { type: 'prompt_queued'; id: string; text: string }

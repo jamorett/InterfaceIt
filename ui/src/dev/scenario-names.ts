@@ -23,6 +23,7 @@ export const scenarioNames = [
   'tool-failed',
   'bypass',
   'tools-rich',
+  'subagent-cards',
   'inspector',
 ] as const;
 
